@@ -1,0 +1,379 @@
+openapi: 3.0.3
+
+info:
+  title: Marketplace API
+  version: 1.0.0
+  description: |
+    API contract for a simple marketplace.
+    The specification defines products and orders,
+    cursor pagination, idempotent order creation,
+    and RFC 7807-style problem responses.
+
+security: []
+
+servers:
+  - url: http://localhost:3000
+
+paths:
+  /products:
+    get:
+      operationId: listProducts
+      summary: List products
+      description: Returns products using cursor-based pagination.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of products to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+
+        - name: cursor
+          in: query
+          required: false
+          description: |
+            Opaque pagination token returned by the previous response.
+            Clients must not parse or construct this value themselves.
+          schema:
+            type: string
+
+      responses:
+        "200":
+          description: Product page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductPage"
+
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /products/{id}:
+    get:
+      operationId: getProductById
+      summary: Get product by id
+      description: Returns a single product.
+      parameters:
+        - $ref: "#/components/parameters/ProductId"
+
+      responses:
+        "200":
+          description: Product found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /orders:
+    get:
+      operationId: listOrders
+      summary: List orders
+      description: Returns orders using cursor-based pagination.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of orders to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+
+        - name: cursor
+          in: query
+          required: false
+          description: |
+            Opaque pagination token returned by the previous response.
+            Clients must not parse or construct this value themselves.
+          schema:
+            type: string
+
+      responses:
+        "200":
+          description: Order page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderPage"
+
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+    post:
+      operationId: createOrder
+      summary: Create order
+      description: Creates a new marketplace order.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: |
+            Unique idempotency key for this creation request.
+            Repeating the same key with the same request body must return
+            the same logical response and must not create a second order.
+          schema:
+            type: string
+            minLength: 1
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderRequest"
+
+      responses:
+        "201":
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /orders/{id}:
+    get:
+      operationId: getOrderById
+      summary: Get order by id
+      description: Returns a single order.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+
+      responses:
+        "200":
+          description: Order found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  parameters:
+    ProductId:
+      name: id
+      in: path
+      required: true
+      description: Product identifier.
+      schema:
+        type: string
+
+    OrderId:
+      name: id
+      in: path
+      required: true
+      description: Order identifier.
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+    NotFound:
+      description: Resource was not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+    UnprocessableEntity:
+      description: Request is syntactically valid but cannot be processed
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Product:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - price_cents
+      properties:
+        id:
+          type: string
+          example: prod_1
+
+        name:
+          type: string
+          example: Mechanical Keyboard
+
+        price_cents:
+          type: integer
+          minimum: 0
+          example: 12999
+
+    ProductPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+
+        next_cursor:
+          type: string
+          nullable: true
+          description: |
+            Opaque cursor for the next page.
+            Null means there are no more pages.
+          example: eyJpZCI6InByb2RfMiJ9
+
+    OrderItemInput:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - quantity
+      properties:
+        product_id:
+          type: string
+          example: prod_1
+
+        quantity:
+          type: integer
+          minimum: 1
+          example: 2
+
+    CreateOrderRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/OrderItemInput"
+
+    OrderItem:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - quantity
+        - unit_price_cents
+      properties:
+        product_id:
+          type: string
+          example: prod_1
+
+        quantity:
+          type: integer
+          minimum: 1
+          example: 2
+
+        unit_price_cents:
+          type: integer
+          minimum: 0
+          example: 12999
+
+    Order:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - items
+        - total_cents
+        - created_at
+      properties:
+        id:
+          type: string
+          example: order_1
+
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/OrderItem"
+
+        total_cents:
+          type: integer
+          minimum: 0
+          example: 25998
+
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-08-29T10:00:00Z"
+
+    OrderPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+
+        next_cursor:
+          type: string
+          nullable: true
+          description: |
+            Opaque cursor for the next page.
+            Null means there are no more pages.
+
+    Problem:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - instance
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI identifying the problem type.
+          example: https://example.com/problems/validation-error
+
+        title:
+          type: string
+          description: Short human-readable problem title.
+          example: Validation error
+
+        status:
+          type: integer
+          description: HTTP status code.
+          example: 400
+
+        detail:
+          type: string
+          description: Human-readable explanation of the specific problem.
+          example: Request body is invalid.
+
+        instance:
+          type: string
+          description: URI reference identifying this specific occurrence.
+          example: /orders
