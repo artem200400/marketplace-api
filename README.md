@@ -27,19 +27,3 @@ The API contract is located at:
 ```text
 openapi/openapi.yaml
 ```
-
-## Configuration
-
-The application validates configuration at startup with a Zod schema.
-
-Configuration flow:
-
-```text
-process.env
-    ↓
-Zod validation
-    ↓
-ConfigService<Env, true>
-    ↓
-Application
-```
