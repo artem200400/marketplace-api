@@ -27,3 +27,15 @@ The API contract is located at:
 ```text
 openapi/openapi.yaml
 ```
+
+## TypeORM and database
+
+The project uses TypeORM with PostgreSQL.
+
+Database schema changes are managed only through migrations.
+
+`synchronize` is disabled:
+
+```ts
+synchronize: false;
+```
