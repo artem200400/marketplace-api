@@ -1,4 +1,5 @@
 import {
+    Check,
     Column,
     CreateDateColumn,
     Entity,
@@ -11,6 +12,10 @@ import type { Relation } from 'typeorm'
 import { Order } from './order.entity.js'
 
 @Entity('users')
+@Check(
+    'CHK_users_balance_cents',
+    `"balance_cents" >= 0`
+)
 export class User {
     @PrimaryGeneratedColumn({
         type: 'bigint'
@@ -29,6 +34,13 @@ export class User {
         unique: true
     })
     email!: string
+
+    @Column({
+        name: 'balance_cents',
+        type: 'integer',
+        default: 0
+    })
+    balanceCents!: number
 
     @CreateDateColumn({
         name: 'created_at',

@@ -6,6 +6,7 @@ import { User } from './entities/user.entity.js'
 import { Product } from './entities/product.entity.js'
 import { Order } from './entities/order.entity.js'
 import { OrderItem } from './entities/order-item.entity.js'
+import { JobQueue } from './entities/job-queue.entity.js'
 
 function requiredEnv(
     name: string
@@ -54,7 +55,8 @@ const AppDataSource = new DataSource({
         User,
         Product,
         Order,
-        OrderItem
+        OrderItem,
+        JobQueue
     ],
 
     migrations: [
