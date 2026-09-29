@@ -13,6 +13,7 @@ import { OrderItem } from './entities/order-item.entity.js'
 type SeedUser = {
     name: string
     email: string
+    balanceCents: number
 }
 
 type SeedProduct = {
@@ -35,23 +36,28 @@ type SeedOrder = {
 const users: SeedUser[] = [
     {
         name: 'Artem',
-        email: 'artem@example.com'
+        email: 'artem@example.com',
+        balanceCents: 10_000_000
     },
     {
         name: 'Anna',
-        email: 'anna@example.com'
+        email: 'anna@example.com',
+        balanceCents: 10_000_000
     },
     {
         name: 'Oleksandr',
-        email: 'oleksandr@example.com'
+        email: 'oleksandr@example.com',
+        balanceCents: 10_000_000
     },
     {
         name: 'Maria',
-        email: 'maria@example.com'
+        email: 'maria@example.com',
+        balanceCents: 10_000_000
     },
     {
         name: 'Erik',
-        email: 'erik@example.com'
+        email: 'erik@example.com',
+        balanceCents: 10_000_000
     }
 ]
 
@@ -208,20 +214,37 @@ async function seed(): Promise<void> {
 
                 for (const data of users) {
                     let user =
-                        await manager.findOne(User, {
-                            where: {
-                                email: data.email
-                            }
-                        })
-
-                    if (!user) {
-                        user = manager.create(
+                        await manager.findOne(
                             User,
-                            data
+                            {
+                                where: {
+                                    email: data.email
+                                }
+                            }
                         )
 
+                    if (!user) {
                         user =
-                            await manager.save(user)
+                            manager.create(
+                                User,
+                                data
+                            )
+
+                        user =
+                            await manager.save(
+                                user
+                            )
+                    } else {
+                        user.name =
+                            data.name
+
+                        user.balanceCents =
+                            data.balanceCents
+
+                        user =
+                            await manager.save(
+                                user
+                            )
                     }
 
                     usersByEmail.set(
@@ -245,10 +268,25 @@ async function seed(): Promise<void> {
                         )
 
                     if (!product) {
-                        product = manager.create(
-                            Product,
-                            data
-                        )
+                        product =
+                            manager.create(
+                                Product,
+                                data
+                            )
+
+                        product =
+                            await manager.save(
+                                product
+                            )
+                    } else {
+                        product.description =
+                            data.description
+
+                        product.priceCents =
+                            data.priceCents
+
+                        product.stock =
+                            data.stock
 
                         product =
                             await manager.save(
@@ -262,7 +300,10 @@ async function seed(): Promise<void> {
                     )
                 }
 
-                for (const orderData of orders) {
+                for (
+                    const orderData
+                    of orders
+                ) {
                     const user =
                         usersByEmail.get(
                             orderData.userEmail
@@ -301,7 +342,9 @@ async function seed(): Promise<void> {
                             Order,
                             {
                                 where: {
-                                    userId: user.id,
+                                    userId:
+                                        user.id,
+
                                     createdAt:
                                         orderData
                                             .createdAt
@@ -310,18 +353,35 @@ async function seed(): Promise<void> {
                         )
 
                     if (!order) {
-                        order = manager.create(
-                            Order,
-                            {
-                                userId: user.id,
-                                status:
-                                    orderData.status,
-                                totalAmountCents,
-                                createdAt:
-                                    orderData
-                                        .createdAt
-                            }
-                        )
+                        order =
+                            manager.create(
+                                Order,
+                                {
+                                    userId:
+                                        user.id,
+
+                                    status:
+                                        orderData
+                                            .status,
+
+                                    totalAmountCents,
+
+                                    createdAt:
+                                        orderData
+                                            .createdAt
+                                }
+                            )
+
+                        order =
+                            await manager.save(
+                                order
+                            )
+                    } else {
+                        order.status =
+                            orderData.status
+
+                        order.totalAmountCents =
+                            totalAmountCents
 
                         order =
                             await manager.save(
@@ -344,13 +404,14 @@ async function seed(): Promise<void> {
                             )
                         }
 
-                        const existingItem =
+                        let existingItem =
                             await manager.findOne(
                                 OrderItem,
                                 {
                                     where: {
                                         orderId:
                                             order.id,
+
                                         productId:
                                             product.id
                                     }
@@ -358,7 +419,7 @@ async function seed(): Promise<void> {
                             )
 
                         if (!existingItem) {
-                            const orderItem =
+                            existingItem =
                                 manager.create(
                                     OrderItem,
                                     {
@@ -379,7 +440,17 @@ async function seed(): Promise<void> {
                                 )
 
                             await manager.save(
-                                orderItem
+                                existingItem
+                            )
+                        } else {
+                            existingItem.quantity =
+                                itemData.quantity
+
+                            existingItem.unitPriceCents =
+                                product.priceCents
+
+                            await manager.save(
+                                existingItem
                             )
                         }
                     }
@@ -401,11 +472,15 @@ async function seed(): Promise<void> {
 
         console.log('')
         console.log('Seed completed')
-        console.log(`users: ${userCount}`)
+        console.log(
+            `users: ${userCount}`
+        )
         console.log(
             `products: ${productCount}`
         )
-        console.log(`orders: ${orderCount}`)
+        console.log(
+            `orders: ${orderCount}`
+        )
         console.log(
             `order_items: ${orderItemCount}`
         )
