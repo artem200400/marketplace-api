@@ -51,6 +51,55 @@ services:
       timeout: 3s
       retries: 20
 
+  pact-broker-postgres:
+    image: postgres:16-alpine
+    container_name: marketplace-pact-broker-postgres
+
+    environment:
+      POSTGRES_USER: pact
+      POSTGRES_PASSWORD: pact
+      POSTGRES_DB: pact_broker
+
+    volumes:
+      - pact_broker_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U pact -d pact_broker"
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  pact-broker:
+    image: pactfoundation/pact-broker:latest
+    container_name: marketplace-pact-broker
+
+    depends_on:
+      pact-broker-postgres:
+        condition: service_healthy
+
+    ports:
+      - "9292:9292"
+
+    environment:
+      PACT_BROKER_DATABASE_URL: postgres://pact:pact@pact-broker-postgres/pact_broker
+      PACT_BROKER_PORT: "9292"
+      PACT_BROKER_LOG_LEVEL: INFO
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "ruby -rnet/http -ruri -e \"r=Net::HTTP.get_response(URI('http://127.0.0.1:9292/diagnostic/status/heartbeat')); exit(r.is_a?(Net::HTTPSuccess) ? 0 : 1)\""
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
   restore-postgres:
     image: postgres:17-alpine
     profiles:
@@ -67,3 +116,4 @@ services:
 volumes:
   postgres_data:
   restore_data:
+  pact_broker_data:
