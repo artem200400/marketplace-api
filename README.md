@@ -462,3 +462,19 @@ grep -cE '^(@(reboot|yearly|annually|monthly|weekly|daily|midnight|hourly)|([0-9
 ```bash
 grep -iE 'RTO|RPO' RESTORE-DRILL.md
 ```
+
+## Testing
+
+The project has three test layers:
+
+- integration tests against a real PostgreSQL container;
+- E2E tests against the full Nest application;
+- Pact consumer/provider contract tests.
+
+### Integration tests
+
+Run:
+
+```bash
+npm run test:integration
+```

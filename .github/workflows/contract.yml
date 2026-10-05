@@ -1,0 +1,79 @@
+name: Contract Tests
+
+on:
+  push:
+    branches:
+      - main
+      - hw-16
+
+  pull_request:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+
+    env:
+      PACT_BROKER_URL: ${{ secrets.PACT_BROKER_URL }}
+      PACT_BROKER_TOKEN: ${{ secrets.PACT_BROKER_TOKEN }}
+      PACT_PROVIDER_VERSION: ${{ github.sha }}
+      CONSUMER_VERSION: ${{ github.sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Run integration tests
+        run: npm run test:integration
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+
+      - name: Generate consumer Pact
+        run: npm run test:contract
+
+      - name: Publish Pact
+        shell: bash
+        run: |
+          curl --fail-with-body \
+            -X PUT \
+            "$PACT_BROKER_URL/pacts/provider/MarketplaceAPI/consumer/MarketplaceFrontend/version/$CONSUMER_VERSION" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $PACT_BROKER_TOKEN" \
+            --data-binary @pacts/MarketplaceFrontend-MarketplaceAPI.json
+
+      - name: Verify provider
+        run: npm run verify:provider
+
+      - name: Can I deploy
+        shell: bash
+        run: |
+          RESPONSE="$(
+            curl --fail-with-body \
+              -H "Authorization: Bearer $PACT_BROKER_TOKEN" \
+              "$PACT_BROKER_URL/can-i-deploy?pacticipant=MarketplaceFrontend&version=$CONSUMER_VERSION&to=prod"
+          )"
+
+          echo "$RESPONSE"
+
+          node -e '
+            const result = JSON.parse(process.argv[1])
+
+            if (result.summary?.deployable !== true) {
+              console.error("can-i-deploy failed")
+              process.exit(1)
+            }
+
+            console.log("can-i-deploy passed")
+          ' "$RESPONSE"

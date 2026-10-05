@@ -13,7 +13,6 @@
     "migrate": "bash scripts/with-secrets.sh dev node ./node_modules/typeorm/cli.js migration:run -d dist/data-source.js",
     "migrate:show": "bash scripts/with-secrets.sh dev node ./node_modules/typeorm/cli.js migration:show -d dist/data-source.js",
     "migrate:revert": "bash scripts/with-secrets.sh dev node ./node_modules/typeorm/cli.js migration:revert -d dist/data-source.js",
-
     "migration:generate": "bash scripts/with-secrets.sh dev node ./node_modules/typeorm/cli.js migration:generate -d dist/data-source.js src/migrations/InitialSchema",
 
     "seed": "bash scripts/with-secrets.sh dev node dist/seed.js",
@@ -26,7 +25,12 @@
     "report": "bash scripts/with-secrets.sh dev node dist/report.js",
 
     "lint:openapi": "redocly lint openapi/openapi.yaml",
-    "bundle:openapi": "redocly bundle openapi/openapi.yaml -o spec.json"
+    "bundle:openapi": "redocly bundle openapi/openapi.yaml -o spec.json",
+
+    "test:integration": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js test/integration --runInBand",
+    "test:e2e": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js test/e2e --runInBand",
+    "test:contract": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js test/contract/consumer --runInBand",
+    "verify:provider": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js test/contract/provider --runInBand"
   },
   "keywords": [],
   "author": "",
@@ -46,11 +50,20 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@nestjs/testing": "^12.1.2",
+    "@pact-foundation/pact": "^17.1.4",
     "@redocly/cli": "^2.46.0",
+    "@testcontainers/postgresql": "^12.2.0",
     "@types/express": "^5.0.6",
+    "@types/jest": "^29.5.14",
     "@types/node": "^26.4.1",
     "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
+    "jest": "^29.7.0",
+    "supertest": "^7.3.1",
+    "testcontainers": "^12.2.0",
+    "ts-jest": "^29.4.14",
     "ts-node": "^10.9.2",
-    "typescript": "^7.0.2"
+    "typescript": "^6.0.3"
   }
 }

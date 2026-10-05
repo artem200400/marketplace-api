@@ -1,9 +1,26 @@
-import { Module } from '@nestjs/common'
-import { ConfigModule } from '@nestjs/config'
+import {
+    Module
+} from '@nestjs/common'
 
-import { validateEnv } from './config/env.schema.js'
-import { DatabaseModule } from './database/database.module.js'
-import { HealthController } from './health.controller.js'
+import {
+    ConfigModule
+} from '@nestjs/config'
+
+import {
+    validateEnv
+} from './config/env.schema.js'
+
+import {
+    DatabaseModule
+} from './database/database.module.js'
+
+import {
+    HealthController
+} from './health.controller.js'
+
+import {
+    OrdersController
+} from './orders.controller.js'
 
 @Module({
     imports: [
@@ -16,7 +33,8 @@ import { HealthController } from './health.controller.js'
     ],
 
     controllers: [
-        HealthController
+        HealthController,
+        OrdersController
     ]
 })
 export class AppModule { }
