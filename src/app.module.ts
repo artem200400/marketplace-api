@@ -22,6 +22,18 @@ import {
     OrdersController
 } from './orders.controller.js'
 
+import {
+    OrderEventsService
+} from './order-events.service.js'
+
+import {
+    OrdersService
+} from './orders.service.js'
+
+import {
+    OrdersGateway
+} from './orders.gateway.js'
+
 @Module({
     imports: [
         ConfigModule.forRoot({
@@ -35,6 +47,12 @@ import {
     controllers: [
         HealthController,
         OrdersController
+    ],
+
+    providers: [
+        OrderEventsService,
+        OrdersService,
+        OrdersGateway
     ]
 })
 export class AppModule { }

@@ -478,3 +478,22 @@ Run:
 ```bash
 npm run test:integration
 ```
+
+## Trade-offs: WebSocket vs SSE
+
+For order status notifications, I would keep SSE in production when the client only needs server-to-client notifications. It is simpler to reconnect and easier to operate through regular HTTP infrastructure. I would choose WebSocket when the application needs frequent bidirectional realtime communication.
+
+| Criterion      | WebSocket                                    | SSE                                     |
+| -------------- | -------------------------------------------- | --------------------------------------- |
+| Direction      | Bidirectional: client and server             | Server to client only                   |
+| Reconnect      | Handled by Socket.IO client logic            | Native reconnect with Last-Event-ID     |
+| Infrastructure | Requires WebSocket-aware proxy/load balancer | Works over normal HTTP                  |
+| Missed events  | Requires custom replay logic                 | Last-Event-ID supports replay naturally |
+| Cost per event | Very low after connection is established     | Small text event over open HTTP stream  |
+
+Run the WebSocket isolation demo:
+
+```bash
+node scripts/realtime-demo.mjs
+echo "exit=$?"
+```

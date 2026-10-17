@@ -7,18 +7,40 @@ import {
     HttpCode,
     NotFoundException,
     Param,
-    Post
+    Patch,
+    Post,
+    Res
 } from '@nestjs/common'
+
+import type {
+    Response
+} from 'express'
+
+import type {
+    Subscription
+} from 'rxjs'
 
 import {
     DatabaseService
 } from './database/database.service.js'
+
+import {
+    OrderEventsService
+} from './order-events.service.js'
+
+import {
+    OrdersService
+} from './orders.service.js'
 
 type CreateOrderBody = {
     items: Array<{
         product_id: string
         quantity: number
     }>
+}
+
+type UpdateStatusBody = {
+    status: string
 }
 
 type ProductPriceRow = {
@@ -42,14 +64,21 @@ type OrderItemRow = {
 export class OrdersController {
     constructor(
         private readonly database:
-            DatabaseService
+            DatabaseService,
+
+        private readonly orders:
+            OrdersService,
+
+        private readonly orderEvents:
+            OrderEventsService
     ) { }
 
     @Post()
     @HttpCode(201)
     async createOrder(
         @Headers('idempotency-key')
-        idempotencyKey: string | undefined,
+        idempotencyKey:
+            string | undefined,
 
         @Body()
         body: CreateOrderBody
@@ -62,15 +91,21 @@ export class OrdersController {
 
         if (
             !body ||
-            !Array.isArray(body.items) ||
-            body.items.length === 0
+            !Array.isArray(
+                body.items
+            ) ||
+            body.items.length ===
+            0
         ) {
             throw new BadRequestException(
                 'items must contain at least one item'
             )
         }
 
-        for (const item of body.items) {
+        for (
+            const item
+            of body.items
+        ) {
             if (
                 !item.product_id ||
                 !Number.isInteger(
@@ -105,13 +140,17 @@ export class OrdersController {
             )
         }
 
-        const resolvedItems: Array<{
-            product_id: string
-            quantity: number
-            unit_price_cents: number
-        }> = []
+        const resolvedItems:
+            Array<{
+                product_id: string
+                quantity: number
+                unit_price_cents: number
+            }> = []
 
-        for (const item of body.items) {
+        for (
+            const item
+            of body.items
+        ) {
             const productResult =
                 await this.database
                     .query<ProductPriceRow>(
@@ -220,16 +259,182 @@ export class OrdersController {
             id:
                 order.id,
 
+            user_id:
+                user.id,
+
+            status:
+                'pending',
+
             items:
                 resolvedItems,
 
             total_cents:
-                order.total_amount_cents,
+                order
+                    .total_amount_cents,
 
             created_at:
-                order.created_at
+                order
+                    .created_at
                     .toISOString()
         }
+    }
+
+    @Patch(':id/status')
+    async updateStatus(
+        @Param('id')
+        id: string,
+
+        @Body()
+        body: UpdateStatusBody
+    ) {
+        if (
+            !body ||
+            typeof body.status !==
+            'string'
+        ) {
+            throw new BadRequestException(
+                'status is required'
+            )
+        }
+
+        return this.orders
+            .updateStatus(
+                id,
+                body.status
+            )
+    }
+
+    /*
+     * SSE endpoint
+     *
+     * Ми використовуємо ручний Response,
+     * щоб повністю контролювати:
+     *
+     * id:
+     * event:
+     * data:
+     *
+     * і replay через Last-Event-ID.
+     */
+    @Get(':id/events')
+    async events(
+        @Param('id')
+        id: string,
+
+        @Headers('last-event-id')
+        lastEventIdHeader:
+            string | undefined,
+
+        @Res()
+        response: Response
+    ) {
+        const order =
+            await this.orders
+                .findOrderOwner(
+                    id
+                )
+
+        if (!order) {
+            response
+                .status(404)
+                .json({
+                    message:
+                        `Order ${id} was not found`
+                })
+
+            return
+        }
+
+        response.writeHead(
+            200,
+            {
+                'Content-Type':
+                    'text/event-stream',
+
+                'Cache-Control':
+                    'no-cache',
+
+                Connection:
+                    'keep-alive',
+
+                'X-Accel-Buffering':
+                    'no'
+            }
+        )
+
+        /*
+         * Підказка із завдання:
+         * задаємо короткий reconnect interval.
+         */
+        response.write(
+            'retry: 1000\n\n'
+        )
+
+        const parsedLastEventId =
+            Number.parseInt(
+                lastEventIdHeader ??
+                '0',
+                10
+            )
+
+        const lastEventId =
+            Number.isFinite(
+                parsedLastEventId
+            )
+                ? parsedLastEventId
+                : 0
+
+        const missedEvents =
+            this.orderEvents
+                .getMissedEvents(
+                    id,
+                    lastEventId
+                )
+
+        for (
+            const event
+            of missedEvents
+        ) {
+            this.writeSseEvent(
+                response,
+                event
+            )
+        }
+
+        const subscription:
+            Subscription =
+            this.orderEvents
+                .events$
+                .subscribe(
+                    event => {
+                        if (
+                            event.orderId !==
+                            id
+                        ) {
+                            return
+                        }
+
+                        this.writeSseEvent(
+                            response,
+                            event
+                        )
+                    }
+                )
+
+        response.on(
+            'close',
+            () => {
+                subscription
+                    .unsubscribe()
+
+                if (
+                    !response
+                        .writableEnded
+                ) {
+                    response.end()
+                }
+            }
+        )
     }
 
     @Get(':id')
@@ -239,10 +444,15 @@ export class OrdersController {
     ) {
         const orderResult =
             await this.database
-                .query<OrderRow>(
+                .query<OrderRow & {
+                    status: string
+                    user_id: string
+                }>(
                     `
                     SELECT
                         id::text,
+                        user_id::text,
+                        status,
                         total_amount_cents,
                         created_at
                     FROM orders
@@ -283,15 +493,55 @@ export class OrdersController {
             id:
                 order.id,
 
+            user_id:
+                order.user_id,
+
+            status:
+                order.status,
+
             items:
                 itemsResult.rows,
 
             total_cents:
-                order.total_amount_cents,
+                order
+                    .total_amount_cents,
 
             created_at:
-                order.created_at
+                order
+                    .created_at
                     .toISOString()
         }
+    }
+
+    private writeSseEvent(
+        response: Response,
+
+        event: {
+            id: number
+            orderId: string
+            status: string
+            createdAt: string
+        }
+    ) {
+        response.write(
+            `id: ${event.id}\n`
+        )
+
+        response.write(
+            'event: order.status\n'
+        )
+
+        response.write(
+            `data: ${JSON.stringify({
+                orderId:
+                    event.orderId,
+
+                status:
+                    event.status,
+
+                createdAt:
+                    event.createdAt
+            })}\n\n`
+        )
     }
 }
