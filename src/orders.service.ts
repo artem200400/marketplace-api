@@ -5,12 +5,24 @@ import {
 } from '@nestjs/common'
 
 import {
+    createHash
+} from 'node:crypto'
+
+import {
     DatabaseService
 } from './database/database.service.js'
 
 import {
     OrderEventsService
 } from './order-events.service.js'
+
+import {
+    RabbitPublisher
+} from './messaging/rabbit.publisher.js'
+
+import type {
+    OrderPlacedEvent
+} from './messaging/order-placed.event.js'
 
 export type OrderStatus =
     | 'pending'
@@ -31,7 +43,10 @@ export class OrdersService {
             DatabaseService,
 
         private readonly orderEvents:
-            OrderEventsService
+            OrderEventsService,
+
+        private readonly rabbitPublisher:
+            RabbitPublisher
     ) { }
 
     async findOrderOwner(
@@ -84,6 +99,54 @@ export class OrdersService {
         }
     }
 
+    async publishOrderPlaced(
+        order: {
+            id: string
+            userId: string
+            totalCents: number
+        }
+    ): Promise<void> {
+        /*
+         * Stable eventId derived from the
+         * business operation/order id.
+         *
+         * The same order always produces
+         * the same order.placed event id.
+         */
+        const eventId =
+            this.createStableEventId(
+                `order.placed:${order.id}`
+            )
+
+        const event:
+            OrderPlacedEvent = {
+            eventId,
+
+            type:
+                'order.placed',
+
+            occurredAt:
+                new Date()
+                    .toISOString(),
+
+            data: {
+                orderId:
+                    order.id,
+
+                userId:
+                    order.userId,
+
+                totalCents:
+                    order.totalCents
+            }
+        }
+
+        await this.rabbitPublisher
+            .publishOrderPlaced(
+                event
+            )
+    }
+
     async updateStatus(
         orderId: string,
         status: string
@@ -134,11 +197,6 @@ export class OrdersService {
             )
         }
 
-        /*
-         * ВАЖЛИВО:
-         * подія народжується саме в бізнес-логіці,
-         * а не в controller.
-         */
         const event =
             this.orderEvents
                 .publishStatus(
@@ -156,5 +214,79 @@ export class OrdersService {
             event_id:
                 event.id
         }
+    }
+
+    private createStableEventId(
+        value: string
+    ): string {
+        const hash =
+            createHash(
+                'sha256'
+            )
+                .update(
+                    value
+                )
+                .digest(
+                    'hex'
+                )
+
+        /*
+         * Convert deterministic SHA-256 bytes
+         * into a UUID-shaped stable identifier.
+         */
+        const part1 =
+            hash.slice(
+                0,
+                8
+            )
+
+        const part2 =
+            hash.slice(
+                8,
+                12
+            )
+
+        const part3 =
+            `5${hash.slice(
+                13,
+                16
+            )}`
+
+        const variant =
+            (
+                (
+                    Number.parseInt(
+                        hash[16],
+                        16
+                    ) &
+                    0x3
+                ) |
+                0x8
+            )
+                .toString(
+                    16
+                )
+
+        const part4 =
+            `${variant}${hash.slice(
+                17,
+                20
+            )}`
+
+        const part5 =
+            hash.slice(
+                20,
+                32
+            )
+
+        return [
+            part1,
+            part2,
+            part3,
+            part4,
+            part5
+        ].join(
+            '-'
+        )
     }
 }

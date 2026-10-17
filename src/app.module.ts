@@ -34,6 +34,14 @@ import {
     OrdersGateway
 } from './orders.gateway.js'
 
+import {
+    RabbitPublisher
+} from './messaging/rabbit.publisher.js'
+
+import {
+    RabbitConsumer
+} from './messaging/rabbit.consumer.js'
+
 @Module({
     imports: [
         ConfigModule.forRoot({
@@ -52,7 +60,9 @@ import {
     providers: [
         OrderEventsService,
         OrdersService,
-        OrdersGateway
+        OrdersGateway,
+        RabbitPublisher,
+        RabbitConsumer
     ]
 })
 export class AppModule { }

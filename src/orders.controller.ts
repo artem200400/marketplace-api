@@ -94,8 +94,7 @@ export class OrdersController {
             !Array.isArray(
                 body.items
             ) ||
-            body.items.length ===
-            0
+            body.items.length === 0
         ) {
             throw new BadRequestException(
                 'items must contain at least one item'
@@ -255,6 +254,25 @@ export class OrdersController {
             )
         }
 
+        /*
+         * HW19:
+         * order.placed публикується
+         * через business layer,
+         * а не напряму з controller.
+         */
+        await this.orders
+            .publishOrderPlaced({
+                id:
+                    order.id,
+
+                userId:
+                    user.id,
+
+                totalCents:
+                    order
+                        .total_amount_cents
+            })
+
         return {
             id:
                 order.id,
@@ -304,18 +322,6 @@ export class OrdersController {
             )
     }
 
-    /*
-     * SSE endpoint
-     *
-     * Ми використовуємо ручний Response,
-     * щоб повністю контролювати:
-     *
-     * id:
-     * event:
-     * data:
-     *
-     * і replay через Last-Event-ID.
-     */
     @Get(':id/events')
     async events(
         @Param('id')
@@ -362,10 +368,6 @@ export class OrdersController {
             }
         )
 
-        /*
-         * Підказка із завдання:
-         * задаємо короткий reconnect interval.
-         */
         response.write(
             'retry: 1000\n\n'
         )
