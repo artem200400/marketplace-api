@@ -497,3 +497,13 @@ Run the WebSocket isolation demo:
 node scripts/realtime-demo.mjs
 echo "exit=$?"
 ```
+
+## Async-події через RabbitMQ
+
+Marketplace API використовує RabbitMQ для асинхронної доставки доменних подій.
+
+Подія:
+
+```text
+order.placed
+```
