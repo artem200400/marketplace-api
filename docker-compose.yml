@@ -121,6 +121,65 @@ services:
       timeout: 5s
       retries: 30
       start_period: 10s
+
+  redis-cache:
+    image: redis:8.4-alpine
+    container_name: marketplace-redis-cache
+
+    command:
+      - redis-server
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+
+    ports:
+      - "6381:6379"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 2s
+
+  redis-queue:
+    image: redis:8.4-alpine
+    container_name: marketplace-redis-queue
+
+    command:
+      - redis-server
+      - --maxmemory-policy
+      - noeviction
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+
+    ports:
+      - "6382:6379"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 2s
+
   restore-postgres:
     image: postgres:17-alpine
     profiles:
