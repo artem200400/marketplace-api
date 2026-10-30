@@ -507,3 +507,104 @@ Marketplace API використовує RabbitMQ для асинхронної 
 ```text
 order.placed
 ```
+
+
+## Redis: кеш, сесії, ліміти, черга
+
+HW23 використовує два незалежні Redis-інстанси.
+
+- `redis-cache` — тільки кеш, з обмеженим `maxmemory` і політикою `allkeys-lru`.
+- `redis-queue` — BullMQ, session/token state та shared rate-limit, з `maxmemory-policy noeviction` і AOF `everysec`.
+
+Два інстанси потрібні тому, що кеш може безпечно втрачати старі ключі через eviction, а queue/session/rate-limit state не повинен випадково зникати через LRU.
+
+### Cache-aside і stampede protection
+
+Кеш працює за схемою cache-aside: Redis -> при miss single-flight lock через `SET NX PX` -> PostgreSQL -> Redis.
+
+Кожен ключ має TTL з jitter:
+
+```text
+300 + random(0..60) seconds
+```
+
+Лок знімається тільки власником через Lua compare-and-delete.
+
+Якщо stampede-lock зламається, коректність бізнес-стану не порушиться: кілька запитів можуть зайвий раз прочитати однакові дані з PostgreSQL. Це лише зайва робота, тому тут lock є оптимізацією, а не захистом бізнес-інваріанта.
+
+### Sessions
+
+Session state зберігається у `redis-queue`, а не в cache Redis. Rolling TTL продовжується при активності через `GETEX`, тому активна сесія переживає рестарт API-процесу і не залежить від його пам'яті.
+
+### Rate limit
+
+Використовується shared sliding-window limiter. Два незалежні instances працюють з одним Redis state. Cleanup/count/add виконуються атомарно одним Lua-скриптом. Перевищення дає семантику HTTP `429` і `Retry-After`.
+
+### BullMQ
+
+BullMQ використовує окремий Redis з `noeviction`.
+
+Failing job має щонайменше 3 attempts та exponential backoff з jitter. Два `add` з однаковим custom `jobId` залишають одну задачу. `removeOnComplete: true` не використовується, щоб completed job продовжував захищати від duplicate jobId.
+
+Періодична задача створюється через `upsertJobScheduler`, тому повторний startup не плодить duplicate scheduler.
+
+### HW23 demo
+
+```bash
+npm run demo:cache
+npm run demo:session
+npm run demo:ratelimit
+npm run demo:queue
+```
+
+Очікувані інваріанти:
+
+```text
+cache-lru=1
+cache-maxmemory=1
+warmed>=50
+ttl-distinct>=5
+concurrent>=20
+db-calls=1
+db-calls-warm=0
+
+requests>=3
+sessions=1
+in-redis=1
+ttl-renewed=1
+
+instances>=2
+allowed=limit
+blocked>=1
+status=429
+retry-after=1
+
+queue-noeviction=1
+attempts>=3
+completed=1
+added=2
+queued=1
+schedulers>=1
+scheduled-runs>=2
+```
+
+### HW23 Grading
+
+На свіжому clone:
+
+```bash
+docker compose up -d --wait
+
+export REDIS_URL=redis://127.0.0.1:6381
+export REDIS_QUEUE_URL=redis://127.0.0.1:6382
+export DATABASE_URL=postgresql://marketplace_user:marketplace_password@127.0.0.1:6432/marketplace
+export SKIP_VAULT=1
+
+npm ci
+npx tsc --noEmit
+
+npm run demo:cache
+npm run demo:session
+npm run demo:ratelimit
+npm run demo:queue
+```
