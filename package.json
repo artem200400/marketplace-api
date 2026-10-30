@@ -7,37 +7,32 @@
     "build": "tsc",
     "start": "npm run build && node dist/main.js",
     "start:dev": "ts-node src/main.ts",
-
     "check:env": "node scripts/check-env-example.mjs",
-
     "migrate": "bash scripts/with-secrets.sh dev node ./node_modules/typeorm/cli.js migration:run -d dist/data-source.js",
     "migrate:show": "bash scripts/with-secrets.sh dev node ./node_modules/typeorm/cli.js migration:show -d dist/data-source.js",
     "migrate:revert": "bash scripts/with-secrets.sh dev node ./node_modules/typeorm/cli.js migration:revert -d dist/data-source.js",
     "migration:generate": "bash scripts/with-secrets.sh dev node ./node_modules/typeorm/cli.js migration:generate -d dist/data-source.js src/migrations/InitialSchema",
-
     "seed": "bash scripts/with-secrets.sh dev node dist/seed.js",
-
     "demo:nplus1": "bash scripts/with-secrets.sh dev node dist/demo-nplus1.js",
     "demo:race": "bash scripts/with-secrets.sh dev node dist/demo-race.js",
     "demo:workers": "bash scripts/with-secrets.sh dev node dist/demo-workers.js",
     "demo:retry": "bash scripts/with-secrets.sh dev node dist/demo-retry.js",
-
     "demo:realtime": "node scripts/realtime-demo.mjs",
     "demo:realtime:same-room": "node scripts/realtime-demo.mjs --same-room",
-
     "demo:publish": "bash scripts/with-secrets.sh dev node scripts/rabbit-demo.mjs publish",
     "demo:dlq": "bash scripts/with-secrets.sh dev node scripts/rabbit-demo.mjs dlq",
     "demo:duplicate": "bash scripts/with-secrets.sh dev node scripts/rabbit-demo.mjs duplicate",
-
     "report": "bash scripts/with-secrets.sh dev node dist/report.js",
-
     "lint:openapi": "redocly lint openapi/openapi.yaml",
     "bundle:openapi": "redocly bundle openapi/openapi.yaml -o spec.json",
-
     "test:integration": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js test/integration --runInBand",
     "test:e2e": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js test/e2e --runInBand",
     "test:contract": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js test/contract/consumer --runInBand",
-    "verify:provider": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js test/contract/provider --runInBand"
+    "verify:provider": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js test/contract/provider --runInBand",
+    "demo:cache": "bash scripts/with-secrets.sh dev node scripts/redis-cache-demo.mjs",
+    "demo:session": "bash scripts/with-secrets.sh dev node scripts/redis-session-demo.mjs",
+    "demo:ratelimit": "bash scripts/with-secrets.sh dev node scripts/redis-ratelimit-demo.mjs",
+    "demo:queue": "bash scripts/with-secrets.sh dev node scripts/redis-queue-demo.mjs"
   },
   "keywords": [],
   "author": "",
@@ -59,7 +54,9 @@
     "socket.io": "^4.8.4",
     "socket.io-client": "^4.8.4",
     "typeorm": "^1.1.1",
-    "zod": "^4.5.4"
+    "zod": "^4.5.4",
+    "bullmq": "6.5.1",
+    "ioredis": "^5.11.1"
   },
   "devDependencies": {
     "@nestjs/testing": "^12.1.2",
