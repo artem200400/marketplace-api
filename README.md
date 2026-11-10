@@ -641,7 +641,7 @@ npm run demo:queue
 
 ## Files
 
-HW26 використовує локальний MinIO як S3-сумісне object storage. AWS-акаунт і картка для локального стенда не потрібні.
+HW26 використовує локальний LocalStack S3 як S3-сумісне object storage. AWS-акаунт і картка для локального стенда не потрібні.
 
 | Змінна | Приклад для локального стенда | Джерело |
 | --- | --- | --- |
@@ -678,9 +678,9 @@ Demo навмисно ріже файл приблизно на три част�
 
 ### CDN / edge
 
-Для локальної здачі вибрана форма **private MinIO + локальний edge**.
+Для локальної здачі вибрана форма **private LocalStack S3 + локальний edge**.
 
-Bucket не має anonymous read. Публіка ходить тільки в edge. Edge читає MinIO своїми credentials, кешує об'єкт і повертає `X-Cache: MISS` або `X-Cache: HIT`.
+Bucket не має anonymous read. Публіка ходить тільки в edge. Edge читає LocalStack S3 своїми credentials, кешує об'єкт і повертає `X-Cache: MISS` або `X-Cache: HIT`.
 
 Публічні assets мають content hash у назві:
 
