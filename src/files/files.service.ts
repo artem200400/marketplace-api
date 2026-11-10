@@ -26,21 +26,28 @@ function required(name: string): string {
 
 @Injectable()
 export class FilesService {
-  private readonly bucket = required('STORAGE_BUCKET')
-  private readonly s3 = new S3Client({
-    region: process.env.STORAGE_REGION ?? 'us-east-1',
-    endpoint: process.env.STORAGE_ENDPOINT || undefined,
-    forcePathStyle: Boolean(process.env.STORAGE_ENDPOINT),
-    credentials: {
-      accessKeyId: required('STORAGE_ACCESS_KEY'),
-      secretAccessKey: required('STORAGE_SECRET_KEY')
-    },
-    requestChecksumCalculation: 'WHEN_REQUIRED'
-  })
-
   constructor(private readonly db: DatabaseService) {}
 
+  private bucket(): string {
+    return required('STORAGE_BUCKET')
+  }
+
+  private s3(): S3Client {
+    return new S3Client({
+      region: process.env.STORAGE_REGION ?? 'us-east-1',
+      endpoint: process.env.STORAGE_ENDPOINT || undefined,
+      forcePathStyle: Boolean(process.env.STORAGE_ENDPOINT),
+      credentials: {
+        accessKeyId: required('STORAGE_ACCESS_KEY'),
+        secretAccessKey: required('STORAGE_SECRET_KEY')
+      },
+      requestChecksumCalculation: 'WHEN_REQUIRED'
+    })
+  }
+
   async createIntent(ownerId: string, contentType: string, expectedSize?: number) {
+    const s3 = this.s3()
+    const s3 = this.s3()
     const extension = CONTENT_TYPES[contentType]
     if (!extension) throw new Error('Unsupported content type')
 
@@ -55,9 +62,9 @@ export class FilesService {
     )
 
     const uploadUrl = await getSignedUrl(
-      this.s3,
+      s3,
       new PutObjectCommand({
-        Bucket: this.bucket,
+        Bucket: this.bucket(),
         Key: key,
         ContentType: contentType
       }),
@@ -72,13 +79,14 @@ export class FilesService {
     contentType: string,
     size: number
   ) {
+    const s3 = this.s3()
     const extension = CONTENT_TYPES[contentType]
     if (!extension) throw new Error('Unsupported content type')
     if (!Number.isFinite(size) || size <= 0) throw new Error('Invalid size')
 
     const key = `uploads/${ownerId}/${randomUUID()}.${extension}`
-    const upload = await this.s3.send(new CreateMultipartUploadCommand({
-      Bucket: this.bucket,
+    const upload = await s3.send(new CreateMultipartUploadCommand({
+      Bucket: this.bucket(),
       Key: key,
       ContentType: contentType
     }))
@@ -99,9 +107,9 @@ export class FilesService {
       Array.from({ length: partCount }, async (_, index) => {
         const partNumber = index + 1
         const url = await getSignedUrl(
-          this.s3,
+          s3,
           new UploadPartCommand({
-            Bucket: this.bucket,
+            Bucket: this.bucket(),
             Key: key,
             UploadId: upload.UploadId,
             PartNumber: partNumber
@@ -131,6 +139,7 @@ export class FilesService {
   }
 
   async listUploadedParts(ownerId: string, id: string) {
+    const s3 = this.s3()
     const result = await this.db.query<{ key: string; upload_id: string | null }>(
       `SELECT "key","upload_id" FROM files WHERE id=$1 AND owner_id=$2`,
       [id, ownerId]
@@ -138,8 +147,8 @@ export class FilesService {
     const file = result.rows[0]
     if (!file?.upload_id) throw new Error('Multipart upload not found')
 
-    const listed = await this.s3.send(new ListPartsCommand({
-      Bucket: this.bucket,
+    const listed = await s3.send(new ListPartsCommand({
+      Bucket: this.bucket(),
       Key: file.key,
       UploadId: file.upload_id
     }))
@@ -151,6 +160,7 @@ export class FilesService {
   }
 
   async commit(ownerId: string, id: string) {
+    const s3 = this.s3()
     const result = await this.db.query<{
       key: string
       size: string | null
@@ -165,8 +175,8 @@ export class FilesService {
     const file = result.rows[0]
     if (!file) throw new Error('File not found')
 
-    const head = await this.s3.send(new HeadObjectCommand({
-      Bucket: this.bucket,
+    const head = await s3.send(new HeadObjectCommand({
+      Bucket: this.bucket(),
       Key: file.key
     }))
 
