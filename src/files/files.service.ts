@@ -47,7 +47,6 @@ export class FilesService {
 
   async createIntent(ownerId: string, contentType: string, expectedSize?: number) {
     const s3 = this.s3()
-    const s3 = this.s3()
     const extension = CONTENT_TYPES[contentType]
     if (!extension) throw new Error('Unsupported content type')
 
