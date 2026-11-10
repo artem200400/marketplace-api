@@ -182,7 +182,7 @@ services:
 
 
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack:4.4.0
     container_name: marketplace-localstack
 
     environment:
