@@ -181,26 +181,26 @@ services:
       start_period: 2s
 
 
-  localstack:
-    image: localstack/localstack:4.4.0
-    container_name: marketplace-localstack
+  minio:
+    image: bitnamilegacy/minio:2025.7.23-debian-12-r5
+    container_name: marketplace-minio
 
     environment:
-      SERVICES: s3
-      AWS_DEFAULT_REGION: us-east-1
-      DEBUG: "0"
+      MINIO_ROOT_USER: hw26user
+      MINIO_ROOT_PASSWORD: hw26secretpass
 
     ports:
-      - "22650:4566"
+      - "22650:9000"
+      - "22651:9001"
 
     tmpfs:
-      - /var/lib/localstack:size=1g
+      - /bitnami/minio/data:size=1g
 
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "curl -fsS http://127.0.0.1:4566/_localstack/health >/dev/null"
+          "curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null"
         ]
       interval: 2s
       timeout: 3s
