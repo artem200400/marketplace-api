@@ -32,7 +32,10 @@
     "demo:cache": "bash scripts/with-secrets.sh dev node scripts/redis-cache-demo.mjs",
     "demo:session": "bash scripts/with-secrets.sh dev node scripts/redis-session-demo.mjs",
     "demo:ratelimit": "bash scripts/with-secrets.sh dev node scripts/redis-ratelimit-demo.mjs",
-    "demo:queue": "bash scripts/with-secrets.sh dev node scripts/redis-queue-demo.mjs"
+    "demo:queue": "bash scripts/with-secrets.sh dev node scripts/redis-queue-demo.mjs",
+    "demo:upload": "bash scripts/with-secrets.sh dev node scripts/files-upload-demo.mjs",
+    "demo:multipart": "bash scripts/with-secrets.sh dev node scripts/files-multipart-demo.mjs",
+    "demo:cdn": "bash scripts/with-secrets.sh dev node scripts/files-cdn-demo.mjs"
   },
   "keywords": [],
   "author": "",
@@ -56,7 +59,9 @@
     "typeorm": "^1.1.1",
     "zod": "^4.5.4",
     "bullmq": "6.5.1",
-    "ioredis": "^5.11.1"
+    "ioredis": "^5.11.1",
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/s3-request-presigner": "^3.0.0"
   },
   "devDependencies": {
     "@nestjs/testing": "^12.1.2",
