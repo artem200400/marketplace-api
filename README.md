@@ -463,6 +463,35 @@ grep -cE '^(@(reboot|yearly|annually|monthly|weekly|daily|midnight|hourly)|([0-9
 grep -iE 'RTO|RPO' RESTORE-DRILL.md
 ```
 
+### HW26 Grading
+
+```bash
+docker compose up -d --wait
+
+export STORAGE_ENDPOINT=http://127.0.0.1:22650
+export STORAGE_ACCESS_KEY=hw26user
+export STORAGE_SECRET_KEY=hw26secretpass
+export STORAGE_BUCKET=hw26-files
+export STORAGE_REGION=us-east-1
+export STORAGE_PRESIGNED_TTL=120
+export SKIP_VAULT=1
+
+npm ci
+npx tsc --noEmit
+
+npm run demo:upload
+npm run demo:multipart
+npm run demo:multipart
+npm run demo:cdn
+```
+
+Static wrapper check:
+
+```bash
+node -e "const s=require('./package.json').scripts;const need=['demo:upload','demo:multipart','demo:cdn'];const bad=need.filter(k=>/with-secrets\\.sh/.test(s[k]||'')===false);console.log(bad.length===0?'OK':'без обгортки: '+bad.join(', '));process.exit(bad.length===0?0:1)"
+grep -q 'SKIP_VAULT' scripts/with-secrets.sh && echo "аварійний вхід є"
+```
+
 ## Testing
 
 The project has three test layers:
@@ -608,3 +637,119 @@ npm run demo:session
 npm run demo:ratelimit
 npm run demo:queue
 ```
+
+
+## Files
+
+HW26 використовує локальний MinIO як S3-сумісне object storage. AWS-акаунт і картка для локального стенда не потрібні.
+
+| Змінна | Приклад для локального стенда | Джерело |
+| --- | --- | --- |
+| `STORAGE_ENDPOINT` | `http://127.0.0.1:22650` | environment / secret wrapper |
+| `STORAGE_ACCESS_KEY` | `hw26user` | secret storage; для локального compose значення dev-only |
+| `STORAGE_SECRET_KEY` | `hw26secretpass` | secret storage; для локального compose значення dev-only |
+| `STORAGE_BUCKET` | `hw26-files` | environment |
+| `STORAGE_REGION` | `us-east-1` | environment, optional |
+| `STORAGE_PRESIGNED_TTL` | `120` | environment, optional |
+
+### Upload contract
+
+Завантаження двокрокове:
+
+1. `POST /uploads/intent` генерує server-side key виду `uploads/{userId}/{uuid}.{ext}`.
+2. Клієнт робить PUT напряму в object storage через presigned URL.
+3. `POST /uploads/commit` виконує `HeadObject` і тільки після перевірки переводить запис у `COMPLETED`.
+
+Клієнтський filename не потрапляє у key. Розширення вибирається тільки за allowlist `Content-Type`.
+
+Presigned TTL для форми завантаження — 120 секунд. Для avatar/product form цього достатньо, але URL не живе довго після того, як користувач покинув форму. Presigned URL не можна відкликати окремо, тому короткий TTL є частиною моделі безпеки.
+
+### Multipart
+
+Для multipart використовується мінімум 5 MiB на частину, preferred size 8 MiB і обмеження S3 у 10 000 частин:
+
+```text
+partSize = max(5 MiB, 8 MiB, ceil(fileSize / 10000))
+```
+
+Resume робиться через `ListParts`: новий процес бачить уже завантажені part numbers і підписує/довантажує тільки відсутні.
+
+Demo навмисно ріже файл приблизно на три частини, завантажує перші дві, потім resume додає рівно одну. До `CompleteMultipartUpload` `HeadObject` повертає 404; після complete розмір збігається, а ETag має multipart-суфікс `-N`.
+
+### CDN / edge
+
+Для локальної здачі вибрана форма **private MinIO + локальний edge**.
+
+Bucket не має anonymous read. Публіка ходить тільки в edge. Edge читає MinIO своїми credentials, кешує об'єкт і повертає `X-Cache: MISS` або `X-Cache: HIT`.
+
+Публічні assets мають content hash у назві:
+
+```text
+assets/app.<sha256-8>.css
+```
+
+і завантажуються з:
+
+```text
+Cache-Control: public, max-age=31536000, immutable
+```
+
+Після нового deploy змінюється URL, тому invalidation не потрібен.
+
+AWS CloudFront + OAC bucket policy для production-варіанту:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCloudFrontServicePrincipalReadOnly",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "cloudfront.amazonaws.com"
+      },
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::YOUR_BUCKET/*",
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceArn": "arn:aws:cloudfront::YOUR_ACCOUNT_ID:distribution/YOUR_DISTRIBUTION_ID"
+        }
+      }
+    }
+  ]
+}
+```
+
+### Demo contract
+
+```text
+demo:upload
+intent=200
+key-from-server=1
+api-alive=0
+put-offline=200
+commit=200
+commit-without-bytes=409
+tampered=403
+expired=403
+
+demo:multipart
+head-before-complete=404
+resumed-parts=1
+complete=200
+size-match=1
+etag-multipart=1
+
+demo:cdn
+direct=403
+edge-miss=200
+edge-hit=200
+cache-hit=1
+new-name=1
+new-url=200
+content-changed=1
+```
+
+Кожен demo очищає bucket на старті/виході. Multipart cleanup також abort-ить незавершені uploads.
+
+Для production варто додати lifecycle `AbortIncompleteMultipartUpload` приблизно через 7 днів і фонову BullMQ job, яка прибирає старі `PENDING` записи/об'єкти.
