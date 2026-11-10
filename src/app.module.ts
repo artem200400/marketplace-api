@@ -42,6 +42,14 @@ import {
     RabbitConsumer
 } from './messaging/rabbit.consumer.js'
 
+import {
+    FilesController
+} from './files/files.controller.js'
+
+import {
+    FilesService
+} from './files/files.service.js'
+
 @Module({
     imports: [
         ConfigModule.forRoot({
@@ -54,7 +62,8 @@ import {
 
     controllers: [
         HealthController,
-        OrdersController
+        OrdersController,
+        FilesController
     ],
 
     providers: [
@@ -62,7 +71,8 @@ import {
         OrdersService,
         OrdersGateway,
         RabbitPublisher,
-        RabbitConsumer
+        RabbitConsumer,
+        FilesService
     ]
 })
 export class AppModule { }
