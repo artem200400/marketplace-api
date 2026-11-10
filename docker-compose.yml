@@ -180,6 +180,57 @@ services:
       retries: 30
       start_period: 2s
 
+
+  minio:
+    image: minio/minio:latest
+    container_name: marketplace-minio
+
+    command:
+      - server
+      - /data
+      - --console-address
+      - ":9001"
+
+    environment:
+      MINIO_ROOT_USER: hw26user
+      MINIO_ROOT_PASSWORD: hw26secretpass
+
+    ports:
+      - "22650:9000"
+      - "22651:9001"
+
+    tmpfs:
+      - /data:size=1g
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://127.0.0.1:9000/minio/health/live"
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: marketplace-minio-init
+
+    depends_on:
+      minio:
+        condition: service_healthy
+
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 hw26user hw26secretpass
+        mc mb --ignore-existing local/hw26-files
+        mc anonymous set none local/hw26-files
+
   restore-postgres:
     image: postgres:17-alpine
     profiles:
