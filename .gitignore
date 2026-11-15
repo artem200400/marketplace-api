@@ -13,3 +13,6 @@ backups/
 spec.json
 
 npm-debug.log*
+.npm_token
+.pulumi/
+infra/.pulumi/
