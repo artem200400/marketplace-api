@@ -5,3 +5,11 @@ secrets
 .git
 .gitignore
 npm-debug.log
+.github
+.env.*
+.secrets
+backups
+.pulumi
+infra/.pulumi
+.npm_token
+npm-debug.log*

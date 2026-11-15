@@ -35,7 +35,16 @@
     "demo:queue": "bash scripts/with-secrets.sh dev node scripts/redis-queue-demo.mjs",
     "demo:upload": "bash scripts/with-secrets.sh dev node scripts/files-upload-demo.mjs",
     "demo:multipart": "bash scripts/with-secrets.sh dev node scripts/files-multipart-demo.mjs",
-    "demo:cdn": "bash scripts/with-secrets.sh dev node scripts/files-cdn-demo.mjs"
+    "demo:cdn": "bash scripts/with-secrets.sh dev node scripts/files-cdn-demo.mjs",
+    "image:build": "bash scripts/hw28-image-build.sh",
+    "cluster:up": "bash scripts/hw28-cluster-up.sh",
+    "cluster:down": "bash scripts/hw28-cluster-down.sh",
+    "scan": "node scripts/hw28-scan.mjs",
+    "up": "bash scripts/with-secrets.sh dev bash scripts/hw28-up.sh",
+    "destroy": "bash scripts/with-secrets.sh dev bash scripts/hw28-destroy.sh",
+    "demo:image": "node demo/image-demo.mjs",
+    "demo:rollout": "node demo/rollout-demo.mjs",
+    "demo:pdb": "node demo/pdb-demo.mjs"
   },
   "keywords": [],
   "author": "",
