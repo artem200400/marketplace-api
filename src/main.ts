@@ -42,8 +42,6 @@ async function bootstrap() {
             AppModule
         )
 
-    app.enableShutdownHooks()
-
     const config =
         app.get<
             ConfigService<Env, true>
