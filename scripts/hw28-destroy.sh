@@ -26,6 +26,7 @@ normalize_backend_url() {
 : "${PULUMI_CONFIG_PASSPHRASE:?PULUMI_CONFIG_PASSPHRASE is required}"
 
 BACKEND_URL="$(normalize_backend_url "$PULUMI_BACKEND_URL")"
+export PULUMI_BACKEND_URL="$BACKEND_URL"
 
 if [[ "$BACKEND_URL" == file:///* ]]; then
   backend_path="${BACKEND_URL#file:///}"
