@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
+import http from 'node:http'
+import https from 'node:https'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -37,16 +39,44 @@ let stopping = false
 
 async function requestOnce() {
   let code = 0
+
   try {
-    const response = await fetch(endpoint, {
-      signal: AbortSignal.timeout(2500),
-      cache: 'no-store'
+    code = await new Promise(resolve => {
+      const url = new URL(endpoint)
+      const client = url.protocol === 'https:' ? https : http
+
+      const request = client.request(
+        url,
+        {
+          method: 'GET',
+          agent: false,
+          headers: {
+            Connection: 'close'
+          }
+        },
+        response => {
+          response.resume()
+          response.once('end', () => {
+            resolve(response.statusCode ?? 0)
+          })
+        }
+      )
+
+      request.setTimeout(2500, () => {
+        request.destroy()
+        resolve(0)
+      })
+
+      request.once('error', () => {
+        resolve(0)
+      })
+
+      request.end()
     })
-    code = response.status
-    await response.arrayBuffer()
   } catch {
     code = 0
   }
+
   out.write(`${code}\n`)
   completed += 1
 }
