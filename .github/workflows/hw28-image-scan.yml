@@ -1,0 +1,38 @@
+name: HW28 Image Scan
+
+on:
+  push:
+    branches:
+      - hw-28
+  pull_request:
+
+jobs:
+  image-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Create build secret
+        run: printf 'ci-dummy-npm-token' > .npm_token
+
+      - name: Build production image
+        run: npm run image:build
+
+      - name: Scan image
+        env:
+          SCAN_MAX: "99999"
+        run: npm run scan
