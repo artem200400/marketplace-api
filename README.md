@@ -757,7 +757,7 @@ content-changed=1
 
 ## Kubernetes
 
-HW28 розгортає production-образ Marketplace API у локальному одновузловому кластері **kind**. Кластер працює в Docker Desktop; для локальної перевірки орієнтир — приблизно **4 GiB memory pool Docker Desktop**, окремий ліміт пам'яті на сам kind-кластер не задається.
+HW28 розгортає production-образ Marketplace API у локальному одновузловому кластері **kind**. Кластер працює в Docker Desktop; локально Docker Desktop має **7.609 GiB Total Memory**, окремий ліміт пам'яті на сам kind-кластер не задається.
 
 | Змінна | Джерело | Навіщо |
 | --- | --- | --- |
