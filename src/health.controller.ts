@@ -1,9 +1,11 @@
 import {
     Controller,
-    Get
+    Get,
+    ServiceUnavailableException
 } from '@nestjs/common'
 
 import { DatabaseService } from './database/database.service.js'
+import { isReady } from './runtime-state.js'
 
 const startedAt =
     Date.now()
@@ -26,6 +28,24 @@ export class HealthController {
                         startedAt
                     ) / 1000
                 )
+        }
+    }
+
+    @Get('healthz')
+    healthz() {
+        return {
+            status: 'ok'
+        }
+    }
+
+    @Get('readyz')
+    readyz() {
+        if (!isReady()) {
+            throw new ServiceUnavailableException('not ready')
+        }
+
+        return {
+            status: 'ready'
         }
     }
 
