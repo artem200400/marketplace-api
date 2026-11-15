@@ -34,5 +34,5 @@ jobs:
 
       - name: Scan image
         env:
-          SCAN_MAX: "99999"
+          SCAN_MAX: "200"
         run: npm run scan
