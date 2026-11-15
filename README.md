@@ -848,7 +848,7 @@ evict-2=429
 ```bash
 export SKIP_VAULT=1
 export APP_DB_PASSWORD=grader-secret
-export PULUMI_BACKEND_URL="file://$PWD/.pulumi"
+export PULUMI_BACKEND_URL="file://$PWD/.pulumi"  # scripts normalize Git Bash/Windows paths
 export PULUMI_CONFIG_PASSPHRASE=hw28-grading
 export APP_IMAGE=marketplace-api:hw28
 
