@@ -753,3 +753,129 @@ content-changed=1
 Кожен demo очищає bucket на старті/виході. Multipart cleanup також abort-ить незавершені uploads.
 
 Для production варто додати lifecycle `AbortIncompleteMultipartUpload` приблизно через 7 днів і фонову BullMQ job, яка прибирає старі `PENDING` записи/об'єкти.
+
+
+## Kubernetes
+
+HW28 розгортає production-образ Marketplace API у локальному одновузловому кластері **kind**. Кластер працює в Docker Desktop; для локальної перевірки орієнтир — приблизно **4 GiB memory pool Docker Desktop**, окремий ліміт пам'яті на сам kind-кластер не задається.
+
+| Змінна | Джерело | Навіщо |
+| --- | --- | --- |
+| `APP_DB_PASSWORD` | сховище (#11) | runtime secret, створюється як Kubernetes Secret і підключається через `secretKeyRef` |
+| `PULUMI_CONFIG_PASSPHRASE` | локальний grading environment | шифрування локального Pulumi state |
+| `PULUMI_BACKEND_URL` | локальний grading environment | файловий backend Pulumi без cloud login |
+| `APP_IMAGE` | environment, optional | тег production image; default `marketplace-api:hw28` |
+| `REV` | environment, optional | зміна pod template для контрольованого rollout |
+
+Production image збирається multi-stage Dockerfile. Build secret передається тільки через BuildKit `RUN --mount=type=secret`; файл `.npm_token` не копіюється в build context як runtime secret і доданий у `.gitignore`. Фінальний image — distroless Node.js, запускається numeric UID `65532` і не містить shell.
+
+### Probes і graceful shutdown
+
+Readiness і liveness мають різні URL:
+
+- readiness: `/readyz`;
+- liveness: `/healthz`.
+
+Застосунок має приблизно 4 секунди warm-up перед `listen()`. На `SIGTERM` він спочатку робить readiness червоним, потім чекає 5 секунд на drain і лише після цього закриває Nest application. `terminationGracePeriodSeconds=12`, тобто Kubernetes не посилає SIGKILL раніше завершення drain.
+
+RollingUpdate використовує:
+
+```text
+maxUnavailable=0
+maxSurge=1
+```
+
+Тому старий pod не забирається з доступного набору, поки новий не став Ready.
+
+### PDB
+
+Deployment має 3 replicas, а PodDisruptionBudget — `minAvailable=2`. Це залишає рівно одну дозволену добровільну disruption: перше Eviction API виселення проходить, друге блокується з HTTP 429, доки бюджет не відновиться.
+
+### HPA
+
+HPA оголошено через `autoscaling/v2`:
+
+```text
+minReplicas=2
+maxReplicas=5
+CPU target=70%
+```
+
+У стандартному kind немає metrics-server, тому CPU target може показувати `<unknown>` — це очікувано. `spec.replicas=3` залишено для локального старту. У production-кластері з metrics-server одночасне керування `spec.replicas` через Pulumi і HPA створює конфлікт володіння полем; там replicas треба передати HPA або ігнорувати зміни цього поля в IaC.
+
+### Runtime secrets
+
+Pulumi вимагає `APP_DB_PASSWORD` до будь-якого звернення до Kubernetes API. Значення з environment створює K8s Secret, а Deployment містить лише `secretKeyRef`, не саме значення.
+
+Для production замість передачі секрету через локальну обгортку логічні два шляхи:
+
+- **External Secrets Operator (ESO)** — синхронізує зовнішнє secret storage у Kubernetes Secret;
+- **Secrets Store CSI Driver** — монтує секрети з зовнішнього сховища у pod без ручного копіювання в manifest.
+
+### HW28 demos
+
+```bash
+npm run demo:image
+npm run demo:rollout
+npm run demo:pdb
+```
+
+Контракт:
+
+```text
+demo:image
+stages>=2
+shell-inside=0
+runtime-uid!=0
+token-in-history=0
+token-in-config=0
+token-in-layers=0
+
+demo:rollout
+profile=correct
+requests>=5000
+failed=0
+
+demo:pdb
+healthy>=3
+minAvailable=2
+evict-1=201
+evict-2=429
+```
+
+### HW28 Grading
+
+```bash
+export SKIP_VAULT=1
+export APP_DB_PASSWORD=grader-secret
+export PULUMI_BACKEND_URL="file://$PWD/.pulumi"
+export PULUMI_CONFIG_PASSPHRASE=hw28-grading
+export APP_IMAGE=marketplace-api:hw28
+
+npm ci
+npm --prefix infra ci
+npx tsc --noEmit
+(cd infra && npx tsc --noEmit)
+
+printf 'dummy-npm-token' > .npm_token
+
+npm run image:build
+npm run demo:image
+
+SCAN_MAX=-1 npm run scan || true
+SCAN_MAX=99999 npm run scan
+
+npm run cluster:up
+npm run up
+
+kubectl -n marketplace-hw28 get deploy marketplace-api
+kubectl -n marketplace-hw28 get pdb marketplace-api
+kubectl -n marketplace-hw28 get hpa marketplace-api
+
+npm run demo:rollout
+kubectl -n marketplace-hw28 get pdb marketplace-api -o jsonpath='{.status.disruptionsAllowed}{"\n"}'
+npm run demo:pdb
+
+npm run destroy
+npm run cluster:down
+```
