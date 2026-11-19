@@ -463,6 +463,43 @@ grep -cE '^(@(reboot|yearly|annually|monthly|weekly|daily|midnight|hourly)|([0-9
 grep -iE 'RTO|RPO' RESTORE-DRILL.md
 ```
 
+
+### HW24 Grading
+
+```bash
+docker compose up -d --wait
+
+export DATABASE_URL=postgresql://marketplace_user:marketplace_password@127.0.0.1:6432/marketplace
+export SKIP_VAULT=1
+
+node -e 'const {generateKeyPairSync}=require("node:crypto");
+const k=generateKeyPairSync("rsa",{modulusLength:2048,
+privateKeyEncoding:{type:"pkcs8",format:"pem"},
+publicKeyEncoding:{type:"spki",format:"pem"}});
+const fs=require("node:fs");
+fs.writeFileSync("/tmp/priv.b64",Buffer.from(k.privateKey).toString("base64"));
+fs.writeFileSync("/tmp/pub.b64",Buffer.from(k.publicKey).toString("base64"));'
+
+export JWT_KID=grader
+export JWT_PRIVATE_KEY="$(cat /tmp/priv.b64)"
+export JWT_PUBLIC_KEY="$(cat /tmp/pub.b64)"
+export REFRESH_TOKEN_PEPPER=grader-pepper
+
+npm ci
+npx tsc --noEmit
+
+npm run demo:auth
+npm run demo:reuse
+npm run demo:rbac
+```
+
+Static wrapper check:
+
+```bash
+node -e "const s=require('./package.json').scripts;const need=['start:vault','demo:auth','demo:reuse','demo:rbac'];const bad=need.filter(k=>/with-secrets\\.sh/.test(s[k]||'')===false);console.log(bad.length===0?'OK':'без обгортки: '+bad.join(', '));process.exit(bad.length===0?0:1)"
+grep -q 'SKIP_VAULT' scripts/with-secrets.sh && echo "аварійний вхід є"
+```
+
 ## Testing
 
 The project has three test layers:
@@ -607,4 +644,88 @@ npm run demo:cache
 npm run demo:session
 npm run demo:ratelimit
 npm run demo:queue
+```
+
+
+## Auth
+
+HW24 додає окремі механізми автентифікації та авторизації.
+
+Access token — короткоживучий RS256 JWT. Refresh token — довгий випадковий opaque token; у PostgreSQL зберігається тільки HMAC-SHA256 від refresh token із pepper зі сховища.
+
+| Змінна | Джерело | Навіщо |
+| --- | --- | --- |
+| `JWT_KID` | сховище (#11) | ідентифікатор активного ключа підпису |
+| `JWT_PRIVATE_KEY` | сховище (#11) | base64 PEM private key для RS256 signing |
+| `JWT_PUBLIC_KEY` | сховище (#11) | base64 PEM public key для RS256 verify |
+| `REFRESH_TOKEN_PEPPER` | сховище (#11) | HMAC pepper для hash refresh-токенів |
+| `DATABASE_URL` | compose / оточення | підключення до PostgreSQL через PgBouncer |
+
+### Access і refresh
+
+Access JWT живе 10 хвилин і містить `sub`, `role`, `jti`, `iat`, `exp`, `iss`, `aud`. Verification має явний allowlist `algorithms = ['RS256']`; зміна payload без нового підпису дає 401.
+
+Refresh token після успішного refresh позначається `used_at`, а новий token отримує той самий `family_id`. Якщо старий refresh token пред'являється повторно, це вважається сигналом компрометації й уся family отримує `revoked_at`. Тому після reuse перестає працювати і новий refresh чесного клієнта.
+
+Refresh на клієнті треба серіалізувати одним shared promise, щоб два паралельні запити не використали той самий refresh і випадково не активували reuse detection.
+
+### Чому logout — дві дії
+
+Refresh token є stateful: logout відкликає всю його family в таблиці `refresh_tokens`.
+
+Access JWT self-contained і без додаткового стану працював би до `exp`. Тому його `jti` одночасно додається в `access_token_denylist` до кінця життя access token. Прострочені записи denylist прибираються автоматично під час перевірки токена.
+
+### 401 і 403
+
+Відсутній, прострочений, відкликаний або зіпсований access token дає **401**. Валідний access token без потрібної ролі або при доступі до чужого order дає **403**.
+
+Ownership не реалізований role guard-ом. `GET /orders/:id` спочатку завантажує order, після чого порівнює `order.user_id` з `sub` access token. Role guard використовується окремо для `POST /products`, де дозволені тільки `seller` і `admin`.
+
+Роль у JWT є кешем. Якщо admin розжалуваний у базі, вже виданий access token зберігає стару роль до свого `exp` (максимум близько 10 хвилин).
+
+### Signing key rotation
+
+`kid` дозволяє overlap-ротацію: під час переходу verifier може знати старий і новий public key, а signer уже видає токени з новим `kid`. Після завершення максимального TTL старого access token старий public key можна прибрати.
+
+Для локального dev і production використовуються різні ключові пари. Відбиток можна отримати без збереження приватного ключа в Git:
+
+```bash
+printf '%s' "$JWT_PUBLIC_KEY" | base64 -d | openssl pkey -pubin -outform DER | sha256sum
+```
+
+Dev/prod fingerprints мають бути різними; самі PEM-ключі в README не зберігаються.
+
+### Auth demos
+
+```bash
+npm run demo:auth
+npm run demo:reuse
+npm run demo:rbac
+```
+
+Очікуваний контракт:
+
+```text
+demo:auth
+login=200
+no-token=401
+with-token=200
+refresh=200
+logout=204
+after-logout=401
+refresh-after-logout=401
+
+demo:reuse
+login=200
+r1-refresh=200
+r1-reuse=401
+r2-after-reuse=401
+
+demo:rbac
+anon=401
+own=200
+foreign=403
+role-denied=403
+role-allowed=201
+tampered=401
 ```
