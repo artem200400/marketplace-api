@@ -43,14 +43,8 @@ function hashPassword(password) {
 }
 
 function run(command, args, options = {}) {
-  const executable =
-    process.platform === 'win32' &&
-    command === 'npm'
-      ? 'npm.cmd'
-      : command
-
   const result = spawnSync(
-    executable,
+    command,
     args,
     {
       stdio: 'inherit',
@@ -66,7 +60,7 @@ function run(command, args, options = {}) {
 
   if (result.status !== 0) {
     throw new Error(
-      `${executable} ${args.join(' ')} exited ${result.status}`
+      `${command} ${args.join(' ')} exited ${result.status}`
     )
   }
 }
@@ -326,10 +320,12 @@ async function login(user) {
 }
 
 async function main() {
-  run('npm', [
-    'run',
-    'build'
-  ])
+  run(
+    process.execPath,
+    [
+      './node_modules/typescript/bin/tsc'
+    ]
+  )
 
   run('node', [
     './node_modules/typeorm/cli.js',
