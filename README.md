@@ -477,12 +477,12 @@ const k=generateKeyPairSync("rsa",{modulusLength:2048,
 privateKeyEncoding:{type:"pkcs8",format:"pem"},
 publicKeyEncoding:{type:"spki",format:"pem"}});
 const fs=require("node:fs");
-fs.writeFileSync("/tmp/priv.b64",Buffer.from(k.privateKey).toString("base64"));
-fs.writeFileSync("/tmp/pub.b64",Buffer.from(k.publicKey).toString("base64"));'
+fs.writeFileSync(".hw24-priv.b64",Buffer.from(k.privateKey).toString("base64"));
+fs.writeFileSync(".hw24-pub.b64",Buffer.from(k.publicKey).toString("base64"));'
 
 export JWT_KID=grader
-export JWT_PRIVATE_KEY="$(cat /tmp/priv.b64)"
-export JWT_PUBLIC_KEY="$(cat /tmp/pub.b64)"
+export JWT_PRIVATE_KEY="$(cat .hw24-priv.b64)"
+export JWT_PUBLIC_KEY="$(cat .hw24-pub.b64)"
 export REFRESH_TOKEN_PEPPER=grader-pepper
 
 npm ci
