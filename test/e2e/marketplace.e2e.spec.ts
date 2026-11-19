@@ -32,6 +32,10 @@ import {
     join
 } from 'node:path'
 
+import {
+    AuthGuard
+} from '../../src/auth/auth.guard.js'
+
 
 describe(
     'Marketplace E2E',
@@ -49,6 +53,9 @@ describe(
             string
 
         let productId:
+            string
+
+        let e2eUserId:
             string
 
         beforeAll(
@@ -177,25 +184,34 @@ describe(
                     );
                 `)
 
-                await pool.query(
-                    `
-                    INSERT INTO users (
-                        name,
-                        email,
-                        balance_cents
+                const userResult =
+                    await pool.query<{
+                        id: string
+                    }>(
+                        `
+                        INSERT INTO users (
+                            name,
+                            email,
+                            balance_cents
+                        )
+                        VALUES (
+                            $1,
+                            $2,
+                            $3
+                        )
+                        RETURNING id::text
+                        `,
+                        [
+                            'E2E User',
+                            'e2e@example.com',
+                            100000
+                        ]
                     )
-                    VALUES (
-                        $1,
-                        $2,
-                        $3
-                    )
-                    `,
-                    [
-                        'E2E User',
-                        'e2e@example.com',
-                        100000
-                    ]
-                )
+
+                e2eUserId =
+                    userResult
+                        .rows[0]
+                        .id
 
                 const productResult =
                     await pool.query<{
@@ -289,6 +305,47 @@ describe(
                             imports: [
                                 AppModule
                             ]
+                        })
+                        .overrideGuard(
+                            AuthGuard
+                        )
+                        .useValue({
+                            canActivate(
+                                context: {
+                                    switchToHttp(): {
+                                        getRequest<T>(): T
+                                    }
+                                }
+                            ) {
+                                const request =
+                                    context
+                                        .switchToHttp()
+                                        .getRequest<{
+                                            authUser?: {
+                                                id: string
+                                                role: 'buyer'
+                                                jti: string
+                                                exp: number
+                                            }
+                                        }>()
+
+                                request.authUser = {
+                                    id:
+                                        e2eUserId,
+                                    role:
+                                        'buyer',
+                                    jti:
+                                        '00000000-0000-4000-8000-000000000001',
+                                    exp:
+                                        Math.floor(
+                                            Date.now() /
+                                            1000
+                                        ) +
+                                        3600
+                                }
+
+                                return true
+                            }
                         })
                         .compile()
 

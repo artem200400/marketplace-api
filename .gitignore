@@ -13,3 +13,5 @@ backups/
 spec.json
 
 npm-debug.log*
+.hw24-priv.b64
+.hw24-pub.b64

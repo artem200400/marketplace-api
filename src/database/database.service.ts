@@ -3,72 +3,95 @@ import {
     OnModuleDestroy
 } from '@nestjs/common'
 
-import { ConfigService } from '@nestjs/config'
-import { readFile } from 'node:fs/promises'
+import {
+    readFile
+} from 'node:fs/promises'
 
 import {
     Pool,
+    type PoolClient,
     QueryResultRow
 } from 'pg'
 
-import type { Env } from '../config/env.schema.js'
+function requiredEnv(
+    name: string
+): string {
+    const value =
+        process.env[name]
 
+    if (!value) {
+        throw new Error(
+            `Missing required environment variable: ${name}`
+        )
+    }
+
+    return value
+}
 
 @Injectable()
-export class DatabaseService implements OnModuleDestroy {
+export class DatabaseService
+implements OnModuleDestroy {
     private readonly pool: Pool
 
-    constructor(
-        private readonly config: ConfigService<Env, true>
-    ) {
+    constructor() {
+        const databaseUrl =
+            process.env.DATABASE_URL ??
+            process.env.DB_URL
+
+        if (databaseUrl) {
+            this.pool =
+                new Pool({
+                    connectionString:
+                        databaseUrl
+                })
+
+            this.attachPoolErrorHandler()
+            return
+        }
+
         const passwordFile =
-            this.config.get(
-                'DB_PASSWORD_FILE',
-                {
-                    infer: true
-                }
-            )
+            process.env
+                .DB_PASSWORD_FILE ??
+            'secrets/db_password'
 
         this.pool = new Pool({
-            host: this.config.get(
-                'DB_HOST',
-                {
-                    infer: true
+            host:
+                requiredEnv(
+                    'DB_HOST'
+                ),
+
+            port:
+                Number(
+                    process.env.DB_PORT ??
+                    '5432'
+                ),
+
+            database:
+                requiredEnv(
+                    'DB_NAME'
+                ),
+
+            user:
+                requiredEnv(
+                    'DB_USER'
+                ),
+
+            password:
+                async () => {
+                    const password =
+                        await readFile(
+                            passwordFile,
+                            'utf8'
+                        )
+
+                    return password.trim()
                 }
-            ),
-
-            port: this.config.get(
-                'DB_PORT',
-                {
-                    infer: true
-                }
-            ),
-
-            database: this.config.get(
-                'DB_NAME',
-                {
-                    infer: true
-                }
-            ),
-
-            user: this.config.get(
-                'DB_USER',
-                {
-                    infer: true
-                }
-            ),
-
-            password: async () => {
-                const password =
-                    await readFile(
-                        passwordFile,
-                        'utf8'
-                    )
-
-                return password.trim()
-            }
         })
 
+        this.attachPoolErrorHandler()
+    }
+
+    private attachPoolErrorHandler() {
         this.pool.on(
             'error',
             error => {
@@ -81,7 +104,8 @@ export class DatabaseService implements OnModuleDestroy {
     }
 
     async query<
-        T extends QueryResultRow = QueryResultRow
+        T extends QueryResultRow =
+            QueryResultRow
     >(
         text: string,
         params?: unknown[]
@@ -90,6 +114,40 @@ export class DatabaseService implements OnModuleDestroy {
             text,
             params
         )
+    }
+
+    async transaction<T>(
+        fn: (
+            client: PoolClient
+        ) => Promise<T>
+    ): Promise<T> {
+        const client =
+            await this.pool.connect()
+
+        try {
+            await client.query(
+                'BEGIN'
+            )
+
+            const result =
+                await fn(client)
+
+            await client.query(
+                'COMMIT'
+            )
+
+            return result
+        }
+        catch (error) {
+            await client.query(
+                'ROLLBACK'
+            )
+
+            throw error
+        }
+        finally {
+            client.release()
+        }
     }
 
     async onModuleDestroy() {

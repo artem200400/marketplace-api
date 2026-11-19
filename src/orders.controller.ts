@@ -2,6 +2,7 @@ import {
     BadRequestException,
     Body,
     Controller,
+    ForbiddenException,
     Get,
     Headers,
     HttpCode,
@@ -9,7 +10,9 @@ import {
     Param,
     Patch,
     Post,
-    Res
+    Req,
+    Res,
+    UseGuards
 } from '@nestjs/common'
 
 import type {
@@ -31,6 +34,11 @@ import {
 import {
     OrdersService
 } from './orders.service.js'
+
+import {
+    AuthGuard,
+    type AuthenticatedRequest
+} from './auth/auth.guard.js'
 
 type CreateOrderBody = {
     items: Array<{
@@ -75,7 +83,12 @@ export class OrdersController {
 
     @Post()
     @HttpCode(201)
+    @UseGuards(AuthGuard)
     async createOrder(
+        @Req()
+        request:
+            AuthenticatedRequest,
+
         @Headers('idempotency-key')
         idempotencyKey:
             string | undefined,
@@ -118,26 +131,8 @@ export class OrdersController {
             }
         }
 
-        const userResult =
-            await this.database.query<{
-                id: string
-            }>(
-                `
-                SELECT id::text
-                FROM users
-                ORDER BY id
-                LIMIT 1
-                `
-            )
-
-        const user =
-            userResult.rows[0]
-
-        if (!user) {
-            throw new BadRequestException(
-                'No marketplace user exists'
-            )
-        }
+        const userId =
+            request.authUser!.id
 
         const resolvedItems:
             Array<{
@@ -218,7 +213,7 @@ export class OrdersController {
                         created_at
                     `,
                     [
-                        user.id,
+                        userId,
                         totalCents
                     ]
                 )
@@ -266,7 +261,7 @@ export class OrdersController {
                     order.id,
 
                 userId:
-                    user.id,
+                    userId,
 
                 totalCents:
                     order
@@ -278,7 +273,7 @@ export class OrdersController {
                 order.id,
 
             user_id:
-                user.id,
+                userId,
 
             status:
                 'pending',
@@ -440,7 +435,12 @@ export class OrdersController {
     }
 
     @Get(':id')
+    @UseGuards(AuthGuard)
     async getOrder(
+        @Req()
+        request:
+            AuthenticatedRequest,
+
         @Param('id')
         id: string
     ) {
@@ -471,6 +471,15 @@ export class OrdersController {
         if (!order) {
             throw new NotFoundException(
                 `Order ${id} was not found`
+            )
+        }
+
+        if (
+            order.user_id !==
+            request.authUser!.id
+        ) {
+            throw new ForbiddenException(
+                'This order belongs to another user'
             )
         }
 

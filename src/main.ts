@@ -5,8 +5,13 @@ import { ConfigService } from '@nestjs/config'
 
 import { AppModule } from './app.module.js'
 import type { Env } from './config/env.schema.js'
+import {
+    requireAuthEnvironment
+} from './auth/jwt.js'
 
 async function bootstrap() {
+    requireAuthEnvironment()
+
     const app = await NestFactory.create(AppModule)
 
     const config =
