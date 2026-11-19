@@ -42,6 +42,26 @@ import {
     RabbitConsumer
 } from './messaging/rabbit.consumer.js'
 
+import {
+    AuthController
+} from './auth/auth.controller.js'
+
+import {
+    AuthService
+} from './auth/auth.service.js'
+
+import {
+    AuthGuard
+} from './auth/auth.guard.js'
+
+import {
+    RolesGuard
+} from './auth/roles.guard.js'
+
+import {
+    ProductsController
+} from './products.controller.js'
+
 @Module({
     imports: [
         ConfigModule.forRoot({
@@ -54,7 +74,9 @@ import {
 
     controllers: [
         HealthController,
-        OrdersController
+        OrdersController,
+        AuthController,
+        ProductsController
     ],
 
     providers: [
@@ -62,7 +84,10 @@ import {
         OrdersService,
         OrdersGateway,
         RabbitPublisher,
-        RabbitConsumer
+        RabbitConsumer,
+        AuthService,
+        AuthGuard,
+        RolesGuard
     ]
 })
 export class AppModule { }
