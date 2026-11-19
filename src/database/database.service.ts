@@ -4,10 +4,6 @@ import {
 } from '@nestjs/common'
 
 import {
-    ConfigService
-} from '@nestjs/config'
-
-import {
     readFile
 } from 'node:fs/promises'
 
@@ -17,19 +13,27 @@ import {
     QueryResultRow
 } from 'pg'
 
-import type {
-    Env
-} from '../config/env.schema.js'
+function requiredEnv(
+    name: string
+): string {
+    const value =
+        process.env[name]
+
+    if (!value) {
+        throw new Error(
+            `Missing required environment variable: ${name}`
+        )
+    }
+
+    return value
+}
 
 @Injectable()
 export class DatabaseService
 implements OnModuleDestroy {
     private readonly pool: Pool
 
-    constructor(
-        private readonly config:
-            ConfigService<Env, true>
-    ) {
+    constructor() {
         const databaseUrl =
             process.env.DATABASE_URL ??
             process.env.DB_URL
@@ -46,44 +50,30 @@ implements OnModuleDestroy {
         }
 
         const passwordFile =
-            this.config.get(
-                'DB_PASSWORD_FILE',
-                {
-                    infer: true
-                }
-            )
+            process.env
+                .DB_PASSWORD_FILE ??
+            'secrets/db_password'
 
         this.pool = new Pool({
             host:
-                this.config.get(
-                    'DB_HOST',
-                    {
-                        infer: true
-                    }
+                requiredEnv(
+                    'DB_HOST'
                 ),
 
             port:
-                this.config.get(
-                    'DB_PORT',
-                    {
-                        infer: true
-                    }
+                Number(
+                    process.env.DB_PORT ??
+                    '5432'
                 ),
 
             database:
-                this.config.get(
-                    'DB_NAME',
-                    {
-                        infer: true
-                    }
+                requiredEnv(
+                    'DB_NAME'
                 ),
 
             user:
-                this.config.get(
-                    'DB_USER',
-                    {
-                        infer: true
-                    }
+                requiredEnv(
+                    'DB_USER'
                 ),
 
             password:
