@@ -10,6 +10,18 @@ import {
     markReady
 } from './runtime-state.js'
 
+import {
+    observabilityMiddleware
+} from './observability/http.middleware.js'
+
+import {
+    logJson
+} from './observability/logger.js'
+
+import {
+    flushSpans
+} from './observability/tracing.js'
+
 const warmupMs =
     Number(
         process.env.APP_WARMUP_MS ??
@@ -39,8 +51,15 @@ async function bootstrap() {
 
     const app =
         await NestFactory.create(
-            AppModule
+            AppModule,
+            {
+                logger: false
+            }
         )
+
+    app.use(
+        observabilityMiddleware
+    )
 
     const config =
         app.get<
@@ -82,8 +101,12 @@ async function bootstrap() {
             shuttingDown =
                 true
 
-            console.log(
-                `${signal}: draining`
+            logJson(
+                'runtime',
+                'draining',
+                {
+                    signal
+                }
             )
 
             markNotReady()
@@ -92,6 +115,7 @@ async function bootstrap() {
                 drainMs
             )
 
+            await flushSpans()
             await app.close()
 
             process.exit(0)
@@ -115,8 +139,12 @@ async function bootstrap() {
         }
     )
 
-    console.log(
-        `Marketplace API listening on http://0.0.0.0:${port}`
+    logJson(
+        'runtime',
+        'app_ready',
+        {
+            port
+        }
     )
 }
 

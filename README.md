@@ -492,6 +492,36 @@ node -e "const s=require('./package.json').scripts;const need=['demo:upload','de
 grep -q 'SKIP_VAULT' scripts/with-secrets.sh && echo "аварійний вхід є"
 ```
 
+
+### HW29 Grading
+
+```bash
+docker compose up -d --wait
+
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:22918
+export PROMETHEUS_URL=http://127.0.0.1:22901
+export TRACE_API_URL=http://127.0.0.1:22904
+export GRAFANA_ADMIN_USER=admin
+export GRAFANA_ADMIN_PASSWORD=admin
+export SKIP_VAULT=1
+
+npm ci
+npx tsc --noEmit
+
+npm run demo:logs
+npm run demo:metrics
+npm run demo:trace
+```
+
+Static wrapper check:
+
+```bash
+node -e "const s=require('./package.json').scripts;const need=['demo:logs','demo:metrics','demo:trace'];const bad=need.filter(k=>/with-secrets\\.sh/.test(s[k]||'')===false);console.log(bad.length===0?'OK':'без обгортки: '+bad.join(', '));process.exit(bad.length===0?0:1)"
+ROOT=$(git rev-parse --show-toplevel); WS=$(git -C "$ROOT" ls-files '*with-secrets.sh' | head -1)
+echo "обгортка=${WS:-НЕМАЄ}"
+grep -qs 'SKIP_VAULT' "$ROOT/$WS" && echo "аварійний-вхід=1" || echo "аварійний-вхід=0"
+```
+
 ## Testing
 
 The project has three test layers:
@@ -879,3 +909,126 @@ npm run demo:pdb
 npm run destroy
 npm run cluster:down
 ```
+
+
+## Observability
+
+HW29 додає корельовані структурні логи, RED-метрики і tracing для Marketplace API. Усі три сигнали використовують один W3C `traceparent`, тому `trace_id` у логах і спанах однаковий.
+
+| Змінна | Джерело | Навіщо |
+| --- | --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | сховище (#11) | endpoint приймача трейсів, локально `http://127.0.0.1:22918` |
+| `PROMETHEUS_URL` | сховище (#11) | адреса Prometheus, локально `http://127.0.0.1:22901` |
+| `TRACE_API_URL` | сховище (#11) | API для читання локальних trace-ів, `http://127.0.0.1:22904` |
+| `GRAFANA_ADMIN_USER` | сховище (#11) | локальний Grafana admin user |
+| `GRAFANA_ADMIN_PASSWORD` | сховище (#11) | локальний Grafana admin password |
+
+### Logs and correlation
+
+Request context живе в `AsyncLocalStorage`. У ньому зберігаються `trace_id`, `span_id`, optional `userId`, `tenant` та `idempotencyKey`. Бізнес-функції не приймають request заради логування.
+
+Запит `/observe/:id` проходить щонайменше три логічні шари:
+
+- `observe.controller`;
+- `observe.service`;
+- `observe.repo`.
+
+Authorization, body, password, access/refresh tokens редагуються до запису JSON-логу. Вхідний `traceparent` продовжується замість генерації окремого correlation UUID.
+
+### RED metrics
+
+`GET /metrics` віддає Prometheus text exposition.
+
+Counter:
+
+```text
+marketplace_http_requests_total{method,route,status}
+```
+
+Histogram:
+
+```text
+marketplace_http_request_duration_seconds{method,route,status}
+```
+
+`route` нормалізований. Наприклад, `/observe/42` і `/observe/999` обидва стають `/observe/:id`, тому різні id не створюють нові series.
+
+Скінченні histogram buckets:
+
+```text
+0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10 seconds
+```
+
+Верхній bucket 10 s навмисно значно більший за очікувану тривалість локального demo-запиту; `above-top-bucket=0` перевіряється самим demo.
+
+### Grafana RED dashboard
+
+Dashboard лежить у:
+
+```text
+observability/grafana/dashboards/marketplace-observability.json
+```
+
+Панелі відповідають на три RED-питання.
+
+Request rate:
+
+```promql
+sum(rate(marketplace_http_requests_total[1m])) by (route)
+```
+
+5xx errors:
+
+```promql
+sum(rate(marketplace_http_requests_total{status=~"5.."}[1m])) by (route)
+```
+
+p95 duration:
+
+```promql
+histogram_quantile(
+  0.95,
+  sum(rate(marketplace_http_request_duration_seconds_bucket[1m])) by (le, route)
+)
+```
+
+Prometheus provisioned у Grafana автоматично. Локальні порти: Grafana `22900`, Prometheus `22901`, trace ingest `22918`, trace query API `22904`.
+
+### HW29 demos
+
+```bash
+npm run demo:logs
+npm run demo:metrics
+npm run demo:trace
+```
+
+Контракт:
+
+```text
+demo:logs
+non-json-lines=0
+layers>=3
+distinct-trace-ids=1
+trace-id-matches-header=1
+burst>=8
+burst-trace-ids=burst
+burst-uneven=0
+secret-req-logged=1
+secret-in-logs=0
+
+demo:metrics
+sent-ok+sent-fail>=50
+counter-delta=sent-ok+sent-fail
+errors-delta=sent-fail
+above-top-bucket=0
+series-after=series-before
+
+demo:trace
+spans>=2
+orphan-spans=0
+trace-matches-header=1
+trace-matches-log=1
+span-status-error=1
+```
+
+Demo values не захардкоджені: вони рахуються зі структурних логів, двох scrape `/metrics` і trace receiver API.

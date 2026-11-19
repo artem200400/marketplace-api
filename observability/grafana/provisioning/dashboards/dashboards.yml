@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Marketplace
+    orgId: 1
+    folder: Marketplace
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 5
+    options:
+      path: /var/lib/grafana/dashboards

@@ -50,6 +50,18 @@ import {
     FilesService
 } from './files/files.service.js'
 
+import {
+    ObserveController
+} from './observability/observe.controller.js'
+
+import {
+    ObserveService
+} from './observability/observe.service.js'
+
+import {
+    ObserveRepository
+} from './observability/observe.repository.js'
+
 @Module({
     imports: [
         ConfigModule.forRoot({
@@ -63,7 +75,8 @@ import {
     controllers: [
         HealthController,
         OrdersController,
-        FilesController
+        FilesController,
+        ObserveController
     ],
 
     providers: [
@@ -72,7 +85,9 @@ import {
         OrdersGateway,
         RabbitPublisher,
         RabbitConsumer,
-        FilesService
+        FilesService,
+        ObserveService,
+        ObserveRepository
     ]
 })
 export class AppModule { }
