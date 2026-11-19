@@ -7,9 +7,20 @@ export const envSchema = z.object({
         .positive()
         .default(3000),
 
+    DATABASE_URL: z
+        .string()
+        .min(1)
+        .optional(),
+
+    DB_URL: z
+        .string()
+        .min(1)
+        .optional(),
+
     DB_HOST: z
         .string()
-        .min(1, 'DB_HOST is required'),
+        .min(1)
+        .optional(),
 
     DB_PORT: z.coerce
         .number()
@@ -19,21 +30,49 @@ export const envSchema = z.object({
 
     DB_NAME: z
         .string()
-        .min(1, 'DB_NAME is required'),
+        .min(1)
+        .optional(),
 
     DB_USER: z
         .string()
-        .min(1, 'DB_USER is required'),
+        .min(1)
+        .optional(),
 
     DB_PASSWORD_FILE: z
         .string()
-        .min(1, 'DB_PASSWORD_FILE is required')
-        .default('secrets/db_password'),
+        .min(1)
+        .default('secrets/db_password')
+}).superRefine(
+    (config, context) => {
+        if (
+            config.DATABASE_URL ||
+            config.DB_URL
+        ) {
+            return
+        }
 
-    DB_URL: z
-        .string()
-        .min(1, 'DB_URL is required')
-})
+        for (
+            const key
+            of [
+                'DB_HOST',
+                'DB_NAME',
+                'DB_USER'
+            ] as const
+        ) {
+            if (!config[key]) {
+                context.addIssue({
+                    code:
+                        'custom',
+                    path: [
+                        key
+                    ],
+                    message:
+                        `${key} is required when DATABASE_URL/DB_URL is not set`
+                })
+            }
+        }
+    }
+)
 
 export type Env =
     z.infer<typeof envSchema>
