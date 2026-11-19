@@ -43,8 +43,14 @@ function hashPassword(password) {
 }
 
 function run(command, args, options = {}) {
+  const executable =
+    process.platform === 'win32' &&
+    command === 'npm'
+      ? 'npm.cmd'
+      : command
+
   const result = spawnSync(
-    command,
+    executable,
     args,
     {
       stdio: 'inherit',
@@ -54,9 +60,13 @@ function run(command, args, options = {}) {
     }
   )
 
+  if (result.error) {
+    throw result.error
+  }
+
   if (result.status !== 0) {
     throw new Error(
-      `${command} ${args.join(' ')} exited ${result.status}`
+      `${executable} ${args.join(' ')} exited ${result.status}`
     )
   }
 }
