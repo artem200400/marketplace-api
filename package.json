@@ -32,7 +32,11 @@
     "demo:cache": "bash scripts/with-secrets.sh dev node scripts/redis-cache-demo.mjs",
     "demo:session": "bash scripts/with-secrets.sh dev node scripts/redis-session-demo.mjs",
     "demo:ratelimit": "bash scripts/with-secrets.sh dev node scripts/redis-ratelimit-demo.mjs",
-    "demo:queue": "bash scripts/with-secrets.sh dev node scripts/redis-queue-demo.mjs"
+    "demo:queue": "bash scripts/with-secrets.sh dev node scripts/redis-queue-demo.mjs",
+    "start:vault": "bash scripts/with-secrets.sh dev npm run start",
+    "demo:auth": "bash scripts/with-secrets.sh dev node scripts/auth-demo.mjs auth",
+    "demo:reuse": "bash scripts/with-secrets.sh dev node scripts/auth-demo.mjs reuse",
+    "demo:rbac": "bash scripts/with-secrets.sh dev node scripts/auth-demo.mjs rbac"
   },
   "keywords": [],
   "author": "",
