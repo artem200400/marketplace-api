@@ -1,5 +1,5 @@
 {
-  "name": "marketplace-hw28-infra",
+  "name": "marketplace-infra",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,7 +7,8 @@
   },
   "dependencies": {
     "@pulumi/kubernetes": "^4.0.0",
-    "@pulumi/pulumi": "^3.0.0"
+    "@pulumi/pulumi": "^3.0.0",
+    "@pulumi/aws": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
