@@ -47,7 +47,16 @@
     "demo:pdb": "node demo/pdb-demo.mjs",
     "demo:logs": "bash scripts/with-secrets.sh dev node demo/logs-demo.mjs",
     "demo:metrics": "bash scripts/with-secrets.sh dev node demo/metrics-demo.mjs",
-    "demo:trace": "bash scripts/with-secrets.sh dev node demo/trace-demo.mjs"
+    "demo:trace": "bash scripts/with-secrets.sh dev node demo/trace-demo.mjs",
+    "up:base": "bash scripts/with-secrets.sh dev bash scripts/hw31-up-base.sh",
+    "up:demo": "bash scripts/with-secrets.sh dev bash scripts/hw31-up-demo.sh",
+    "destroy:demo": "bash scripts/with-secrets.sh dev bash scripts/hw31-destroy-demo.sh",
+    "destroy:base": "bash scripts/with-secrets.sh dev bash scripts/hw31-destroy-base.sh",
+    "demo:failover": "bash scripts/with-secrets.sh dev bash scripts/hw31-demo-failover.sh",
+    "demo:nat": "bash scripts/with-secrets.sh dev bash scripts/hw31-demo-nat.sh",
+    "demo:alb": "bash scripts/with-secrets.sh dev bash scripts/hw31-demo-alb.sh",
+    "evidence:base": "bash scripts/with-secrets.sh dev bash scripts/hw31-base-evidence.sh",
+    "evidence:iam": "bash scripts/with-secrets.sh dev bash scripts/hw31-iam-evidence.sh"
   },
   "keywords": [],
   "author": "",
