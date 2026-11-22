@@ -477,9 +477,42 @@ const teardownPolicy =
 
                                 'tag:GetResources',
 
+                                'iam:CreateOpenIDConnectProvider',
+                                'iam:CreateRole',
+                                'iam:DeleteOpenIDConnectProvider',
+                                'iam:DeleteRole',
+                                'iam:DeleteRolePolicy',
+                                'iam:GetOpenIDConnectProvider',
                                 'iam:GetRole',
                                 'iam:GetRolePolicy',
+                                'iam:ListAttachedRolePolicies',
+                                'iam:ListRolePolicies',
+                                'iam:PutRolePolicy',
                                 'iam:SimulatePrincipalPolicy',
+                                'iam:TagOpenIDConnectProvider',
+                                'iam:TagRole',
+                                'iam:UntagOpenIDConnectProvider',
+                                'iam:UntagRole',
+
+                                'lambda:AddPermission',
+                                'lambda:CreateFunction',
+                                'lambda:DeleteFunction',
+                                'lambda:GetFunction',
+                                'lambda:GetFunctionConfiguration',
+                                'lambda:GetPolicy',
+                                'lambda:ListVersionsByFunction',
+                                'lambda:RemovePermission',
+                                'lambda:TagResource',
+                                'lambda:UntagResource',
+                                'lambda:UpdateFunctionCode',
+                                'lambda:UpdateFunctionConfiguration',
+
+                                'logs:CreateLogGroup',
+                                'logs:DeleteLogGroup',
+                                'logs:DescribeLogGroups',
+                                'logs:ListTagsForResource',
+                                'logs:TagResource',
+                                'logs:UntagResource',
 
                                 'budgets:CreateBudget',
                                 'budgets:DeleteBudget',
@@ -523,6 +556,9 @@ export const rdsSecurityGroupId =
 
 export const teardownRoleArn =
     teardownRole.arn
+
+export const teardownRoleName =
+    teardownRole.name
 
 export const teardownPolicyName =
     teardownPolicy.name
