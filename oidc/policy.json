@@ -1,0 +1,9 @@
+{
+  "issuer": "https://token.actions.githubusercontent.com",
+  "audience": "hw32-ci",
+  "allowedSub": [
+    "repo:artem200400/marketplace-api:pull_request",
+    "repo:artem200400/marketplace-api:ref:refs/heads/hw-32",
+    "repo:artem200400/marketplace-api:ref:refs/heads/main"
+  ]
+}
