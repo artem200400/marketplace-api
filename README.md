@@ -1032,3 +1032,216 @@ span-status-error=1
 ```
 
 Demo values не захардкоджені: вони рахуються зі структурних логів, двох scrape `/metrics` і trace receiver API.
+
+
+## AWS
+
+смуга: основна
+
+teardown-run: PENDING — після реального `workflow_dispatch` сюди треба поставити ПЕРШИМ посиланням конкретний `https://github.com/artem200400/marketplace-api/actions/runs/<id>`.
+
+> Live demo status (2026-11-23): base та IAM evidence зібрані. AWS поставив новий Free Plan project на account-verification hold; `EC2 RunInstances` повертає `Blocked: This account is currently blocked and not recognized as a valid account`. Paid demo resources після невдалих запусків були видалені; live ALB/failover/NAT evidence і фінальний teardown-run залишаються pending до зняття AWS hold.
+
+region: `eu-north-1`
+
+HW31 має два незалежні Pulumi-проєкти:
+
+- `infra/base/` — бюджет, VPC, 2 public + 2 private subnets у двох AZ, IGW, route tables, security groups, GitHub OIDC role. У base немає RDS, ALB, NAT, EC2 або EIP.
+- `infra/demo/` — короткоживучі платні ресурси: RDS Multi-AZ, ALB + EC2 `t4g.micro` target і NAT тільки коли `withNat=true`.
+
+### Вартість
+
+Перед live-run ставки треба ще раз звірити з AWS pricing. Нижче — контрольна таблиця зі знімка завдання від 2026-08-24 для `eu-central-1`; поточний live account працює в `eu-north-1`; місяць = 730 годин.
+
+| Рядок | Ставка / база | 730 годин |
+| --- | ---: | ---: |
+| ALB | $0.02700/год | $19.71 |
+| RDS PostgreSQL Multi-AZ `db.t4g.micro` | $0.03700/год | $27.01 |
+| gp3 20 GiB Multi-AZ | $0.274/GiB-місяць × 20 | $5.48 |
+| Public IPv4 ×2 під ALB | $0.00500/год ×2 | $7.30 |
+| LCU, навчальне припущення | — | $0.29 |
+| Разом | приблизно $0.08191/год | $59.79 |
+
+Орієнтир із завдання: 4 години ≈ $0.33; одна доба ≈ $1.97. NAT у звичайному стеку вимкнений. Окреме `demo:nat` вмикає один NAT лише на короткий вимір; неповна NAT-година білиться як повна.
+
+Якщо цей AWS account уже існував раніше і не має права на Free plan/credits, стек оплачується живими грошима з першої хвилини. AWS Organizations і Control Tower для HW31 не використовуються.
+
+### Budget
+
+`aws.budgets.Budget` — перший AWS resource у `infra/base/index.ts`.
+
+- type: `COST`
+- period: `MONTHLY`
+- limit: `$5`
+- notification: `ACTUAL`
+- threshold: `20%`
+- comparison: `GREATER_THAN`
+
+`FORECASTED` навмисно не використовується. Budget є сигналом, а не автоматичним stop-механізмом; реальний stop тут — коротке життя `demo` і teardown workflow.
+
+### Network
+
+VPC: `10.31.0.0/16`.
+
+Public subnets:
+- `10.31.0.0/24`
+- `10.31.1.0/24`
+
+Private subnets:
+- `10.31.10.0/24`
+- `10.31.11.0/24`
+
+Public route table має `0.0.0.0/0 -> IGW`. Private route table за замовчуванням не має `0.0.0.0/0`; NAT route з'являється тільки тимчасово в `demo:nat`.
+
+ALB SG відкриває TCP/80 для Internet-facing demo. RDS SG відкриває TCP/5432 тільки від application/ALB SG, не від Internet.
+
+### IAM + GitHub OIDC
+
+Trust policy використовує provider `token.actions.githubusercontent.com`, audience `sts.amazonaws.com` і звужує `sub` до:
+
+```text
+repo:artem200400/marketplace-api:*
+```
+
+У permission policy немає `Action: "*"`. Дозволи згруповані за реальною потребою:
+
+| Actions | Навіщо |
+| --- | --- |
+| `ec2:Create/Delete/Describe VPC, subnet, route table, IGW, SG` | створення/знесення base network і post-destroy checks |
+| `ec2:Allocate/ReleaseAddress`, `Create/Delete/DescribeNatGateway` | одноразовий NAT demo та EIP cleanup |
+| `elasticloadbalancing:Create/Delete/Describe*`, register/deregister target | ALB, target group, listener і health evidence |
+| `rds:Create/Delete/Describe/Modify/Reboot*` | Multi-AZ instance, failover і events |
+| `lambda:Create/Delete/Get/Update*` + permission/tag actions | дешевий ALB target без EC2 |
+| `logs:Create/Delete/Describe/Tag*` | Lambda logging lifecycle |
+| `tag:GetResources` | незалежна перевірка хвостів за Project tag |
+| `iam:GetRole/GetRolePolicy/SimulatePrincipalPolicy` | evidence і позитивний/негативний IAM test |
+| IAM lifecycle для OIDC/roles/policies | base може знести власну CI role |
+| `budgets:Create/Delete/Describe/ModifyBudget` | $5 budget lifecycle |
+
+`evidence:iam` перевіряє:
+- дозволену дію: `ec2:DescribeVpcs` → `allowed`;
+- заборонену дію: `s3:DeleteBucket` → `implicitDeny` або `explicitDeny`.
+
+AWS access key/secret у GitHub Actions не зберігаються: teardown отримує короткоживучі credentials через GitHub OIDC. `PULUMI_ACCESS_TOKEN` потрібен лише для віддаленого state backend і не є AWS credential.
+
+### RDS Multi-AZ
+
+Demo використовує саме `aws.rds.Instance`, а не Multi-AZ DB cluster:
+
+- PostgreSQL;
+- `db.t4g.micro`;
+- `multiAz: true`;
+- gp3 20 GiB;
+- `storageEncrypted: true`;
+- `backupRetentionPeriod: 1`;
+- `deletionProtection: false`;
+- `skipFinalSnapshot: true`;
+- private DB subnet group.
+
+Порівняно зі стеком #15 RDS забирає на себе managed primary/standby replication, failover, storage і автоматичні snapshots. Він не забирає application migrations, транзакційні retry, перевірку restore-процедур і connection pooling. PgBouncer як патерн не стає непотрібним автоматично; у AWS для цього можна окремо розглядати RDS Proxy.
+
+`demo:failover` запускає `reboot-db-instance --force-failover`, міряє AZ до/після, секунди і зберігає останній RDS event.
+
+### ALB
+
+ALB Internet-facing, у двох public subnets. Target — EC2 `t4g.micro` на Amazon Linux 2023; user-data піднімає HTTP server, а target group перевіряє HTTP 200. `demo:alb` записує:
+
+```text
+alb-dns=...
+http-code=200
+target-state=healthy
+```
+
+### NAT measurement
+
+NAT у постійному стеку відсутній. `demo:nat`:
+
+1. ставить `withNat=true`;
+2. робить `pulumi up`;
+3. фіксує час;
+4. ставить `withNat=false`;
+5. робить `pulumi up` і зносить NAT/EIP;
+6. рахує `nat-minutes` і округлені `nat-billed-hours`.
+
+### KMS
+
+KMS не замінює secret storage із #11. Це нижчий шар: KMS-key може шифрувати, наприклад, `ENCRYPTION_KEY`/секрети, але керування самими значеннями, доступом і ротацією лишається задачею secret storage. Customer-managed KMS key для HW31 не створюється, щоб не залишати окремий платний ресурс.
+
+### Pulumi state
+
+У #28 використовувався локальний `file://` backend, який бачив тільки ноутбук. У HW31 teardown виконується на GitHub runner, тому state має бути віддалено доступним. Для основної смуги використовується Pulumi Cloud Individual; workflow читає `PULUMI_ACCESS_TOKEN` і не потребує AWS access keys.
+
+### Evidence
+
+Після реального `up`:
+
+```bash
+npm run evidence:base
+npm run evidence:iam
+npm run demo:alb
+npm run demo:failover
+npm run demo:nat
+```
+
+Ці команди створюють/оновлюють:
+
+```text
+evidence/base.txt
+evidence/base-state.json
+evidence/iam.json
+evidence/iam.txt
+evidence/demos.txt
+```
+
+Значення не підставляються вручну — вони читаються з Pulumi/AWS CLI.
+
+### Teardown gate
+
+`.github/workflows/teardown.yml` має `schedule` і `workflow_dispatch`, отримує AWS credentials через OIDC, зносить `demo`, потім `base`, після чого перевіряє вибраний project region `eu-north-1`.
+
+У фінальному dispatch-run мають бути:
+
+```text
+state-resources-left=0
+tagged-resources-left=0
+rds-left=0
+alb-left=0
+nat-left=0
+eip-left=0
+```
+
+Після успішного live teardown конкретне Actions URL треба вставити у верх цього розділу замість `PENDING`. Саме цей run є головним доказом знесення.
+
+### HW31 local commands
+
+```bash
+export SKIP_VAULT=1
+export AWS_REGION=eu-north-1
+export HW31_BUDGET_EMAIL=<your-email>
+export HW31_DB_PASSWORD=<temporary-rds-password>
+export PULUMI_ACCESS_TOKEN=<pulumi-cloud-token>
+
+npm --prefix infra ci
+
+npm run up:base
+
+# Після base up:
+# 1) отримай fully-qualified base stack ref і задай:
+export HW31_BASE_STACK_REF=<org>/marketplace-hw31-base/dev
+
+# 2) додай output teardownRoleArn як GitHub repository variable:
+# AWS_TEARDOWN_ROLE_ARN
+
+npm run evidence:base
+npm run evidence:iam
+
+npm run up:demo
+npm run demo:alb
+npm run demo:failover
+npm run demo:nat
+
+# Не залишай paid demo після роботи:
+npm run destroy:demo
+```
+
+Не запускай `up:demo`, поки не готовий одразу пройти demos і teardown.

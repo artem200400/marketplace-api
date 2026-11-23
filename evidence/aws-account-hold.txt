@@ -1,0 +1,23 @@
+date=2026-11-23
+region=eu-north-1
+status=blocked-by-aws-account-verification
+
+failed-operation=ec2:RunInstances
+aws-error=Blocked: This account is currently blocked and not recognized as a valid account. Please contact AWS Support for account verification.
+
+context:
+- AWS Free Plan project was placed on hold pending account verification.
+- Base stack and IAM evidence were created successfully before the hold prevented the live demo target.
+- A demo attempt created RDS/ALB resources but failed on EC2 RunInstances.
+- The failed demo stack was destroyed immediately.
+
+post-cleanup-checks:
+rds-left=0
+alb-left=0
+ec2-running-or-stopped-left=0
+
+pending-after-verification:
+- live ALB HTTP 200 + healthy target evidence
+- RDS Multi-AZ failover evidence
+- NAT short-lived measurement
+- final GitHub Actions workflow_dispatch teardown run with six zero counters

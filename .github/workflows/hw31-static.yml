@@ -1,0 +1,54 @@
+name: HW31 Static
+
+on:
+  pull_request:
+    paths:
+      - 'infra/base/**'
+      - 'infra/demo/**'
+      - 'infra/package.json'
+      - 'infra/package-lock.json'
+      - 'scripts/hw31-*.sh'
+      - '.github/workflows/teardown.yml'
+      - 'package.json'
+      - 'README.md'
+      - '.github/workflows/hw31-static.yml'
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install infra dependencies
+        run: npm --prefix infra ci
+
+      - name: Typecheck base
+        working-directory: infra/base
+        run: npx tsc --noEmit
+
+      - name: Typecheck demo
+        working-directory: infra/demo
+        run: npx tsc --noEmit
+
+      - name: Check fixed wrapper scripts
+        shell: bash
+        run: |
+          PKG=$(git ls-files 'package.json' '*/package.json' | grep -v node_modules | head -1)
+          node -e "const s=require(require('path').resolve(process.argv[1])).scripts||{};const need=['up:base','up:demo','destroy:demo','destroy:base','demo:failover','demo:nat','demo:alb'];const bad=need.filter(k=>!/with-secrets\\.sh/.test(s[k]||''));console.log(bad.length?('without wrapper: '+bad.join(', ')):'OK');process.exit(bad.length?1:0)" "$PKG"
+
+      - name: Check teardown triggers and OIDC
+        shell: bash
+        run: |
+          grep -qE '^  schedule:' .github/workflows/teardown.yml
+          grep -qE '^  workflow_dispatch:' .github/workflows/teardown.yml
+          grep -qE 'id-token: write' .github/workflows/teardown.yml
+          grep -qE 'pulumi.*destroy|hw31-teardown-checks' .github/workflows/teardown.yml

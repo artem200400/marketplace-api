@@ -1,13 +1,21 @@
 {
-  "name": "marketplace-hw28-infra",
+  "name": "marketplace-infra",
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "up:base": "bash ../scripts/with-secrets.sh dev bash scripts/hw31-up-base.sh",
+    "up:demo": "bash ../scripts/with-secrets.sh dev bash scripts/hw31-up-demo.sh",
+    "destroy:demo": "bash ../scripts/with-secrets.sh dev bash scripts/hw31-destroy-demo.sh",
+    "destroy:base": "bash ../scripts/with-secrets.sh dev bash scripts/hw31-destroy-base.sh",
+    "demo:failover": "bash ../scripts/with-secrets.sh dev bash scripts/hw31-demo-failover.sh",
+    "demo:nat": "bash ../scripts/with-secrets.sh dev bash scripts/hw31-demo-nat.sh",
+    "demo:alb": "bash ../scripts/with-secrets.sh dev bash scripts/hw31-demo-alb.sh"
   },
   "dependencies": {
     "@pulumi/kubernetes": "^4.0.0",
-    "@pulumi/pulumi": "^3.0.0"
+    "@pulumi/pulumi": "^3.0.0",
+    "@pulumi/aws": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
