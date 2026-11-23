@@ -85,9 +85,11 @@ jobs:
           DIGEST="$(jq -r '."containerimage.digest"' .hw32/build-metadata.json)"
           test "$DIGEST" != "null"
           test -n "$DIGEST"
-          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
-          echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
-          echo "build_log=$(cat .hw32/build.log)" >> "$GITHUB_OUTPUT"
+          {
+            echo "digest=$DIGEST"
+            echo "image_ref=$IMAGE_REF"
+            echo "build_log=$(cat .hw32/build.log)"
+          } >> "$GITHUB_OUTPUT"
       - name: Image scan gate
         id: scan
         shell: bash
