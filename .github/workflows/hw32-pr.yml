@@ -162,7 +162,7 @@ jobs:
           node scripts/hw32-request-oidc.mjs evidence/oidc.jwt
           node scripts/oidc-gate.mjs             --token-file evidence/oidc.jwt             --policy oidc/policy.json             --discovery https://token.actions.githubusercontent.com/.well-known/openid-configuration             | tee evidence/oidc.txt
       - name: Create kind cluster
-        run: APP_IMAGE="$IMAGE_REF" npm run cluster:up
+        run: APP_IMAGE="$IMAGE_REF@$BUILT_DIGEST" npm run cluster:up
       - name: Pulumi preview
         shell: bash
         run: |
