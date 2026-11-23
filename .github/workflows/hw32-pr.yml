@@ -2,9 +2,12 @@ name: HW32 PR Pipeline
 
 on:
   pull_request:
+  push:
+    branches:
+      - hw-32
 
 concurrency:
-  group: hw32-pr-${{ github.event.pull_request.number }}
+  group: hw32-pr-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -31,7 +34,8 @@ jobs:
       - name: Contract gate
         shell: bash
         run: |
-          git fetch origin "$GITHUB_BASE_REF" --depth=1
+          BASE_REF="${GITHUB_BASE_REF:-hw-31}"
+          git fetch origin "$BASE_REF" --depth=1
           mkdir -p .hw32
           git show FETCH_HEAD:openapi/openapi.yaml > .hw32/base-openapi.yaml
           docker run --rm -v "$PWD:/repo:ro" -w /repo tufin/oasdiff:v1.39.0             breaking /repo/.hw32/base-openapi.yaml /repo/openapi/openapi.yaml
@@ -69,7 +73,7 @@ jobs:
         id: image
         shell: bash
         env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           mkdir -p .hw32
@@ -106,7 +110,7 @@ jobs:
       packages: read
       id-token: write
     env:
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       IMAGE_REF: ${{ needs.build.outputs.image_ref }}
       BUILT_DIGEST: ${{ needs.build.outputs.digest }}
       APP_DB_PASSWORD: grader-secret
@@ -160,7 +164,7 @@ jobs:
       - name: Cost gate
         shell: bash
         env:
-          COST_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'cost-approved') }}
+          COST_APPROVED: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'cost-approved') }}
         run: |
           set +e
           PLAN_JSON=evidence/plan.json npm run gate:cost
