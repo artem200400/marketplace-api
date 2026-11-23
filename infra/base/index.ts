@@ -5,9 +5,11 @@ const config =
     new pulumi.Config()
 
 const budgetEmail =
-    config.require(
+    config.get(
         'budgetEmail'
-    )
+    ) ??
+    process.env.HW31_BUDGET_EMAIL ??
+    'hw31-budget@example.invalid'
 
 const repo =
     'artem200400/marketplace-api'
