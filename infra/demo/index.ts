@@ -133,104 +133,120 @@ const database =
         }
     )
 
-const lambdaRole =
-    new aws.iam.Role(
-        'hw31-lambda-role',
+const targetSecurityGroup =
+    new aws.ec2.SecurityGroup(
+        'hw31-target-sg',
         {
-            assumeRolePolicy:
-                JSON.stringify({
-                    Version:
-                        '2012-10-17',
+            vpcId,
 
-                    Statement: [
-                        {
-                            Effect:
-                                'Allow',
+            description:
+                'HW31 EC2 target security group',
 
-                            Principal: {
-                                Service:
-                                    'lambda.amazonaws.com'
-                            },
+            ingress: [
+                {
+                    protocol:
+                        'tcp',
 
-                            Action:
-                                'sts:AssumeRole'
-                        }
+                    fromPort:
+                        80,
+
+                    toPort:
+                        80,
+
+                    securityGroups: [
+                        albSecurityGroupId
                     ]
-                })
+                }
+            ],
+
+            egress: [
+                {
+                    protocol:
+                        '-1',
+
+                    fromPort:
+                        0,
+
+                    toPort:
+                        0,
+
+                    cidrBlocks: [
+                        '0.0.0.0/0'
+                    ]
+                }
+            ]
         }
     )
 
-new aws.iam.RolePolicy(
-    'hw31-lambda-logs',
-    {
-        role:
-            lambdaRole.id,
+const targetAmi =
+    aws.ec2.getAmiOutput({
+        mostRecent:
+            true,
 
-        policy:
-            JSON.stringify({
-                Version:
-                    '2012-10-17',
+        owners: [
+            'amazon'
+        ],
 
-                Statement: [
-                    {
-                        Effect:
-                            'Allow',
+        filters: [
+            {
+                name:
+                    'name',
 
-                        Action: [
-                            'logs:CreateLogGroup',
-                            'logs:CreateLogStream',
-                            'logs:PutLogEvents'
-                        ],
-
-                        Resource:
-                            'arn:aws:logs:*:*:*'
-                    }
+                values: [
+                    'al2023-ami-2023*-kernel-6.1-arm64'
                 ]
-            })
-    }
-)
+            },
+            {
+                name:
+                    'architecture',
 
-const lambdaCode =
-    new pulumi.asset.AssetArchive({
-        'index.mjs':
-            new pulumi.asset.StringAsset(
-                `
-                export async function handler() {
-                    return {
-                        statusCode: 200,
-                        statusDescription: '200 OK',
-                        isBase64Encoded: false,
-                        headers: {
-                            'content-type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            status: 'ok',
-                            source: 'hw31-alb-lambda'
-                        })
-                    }
-                }
-                `
-            )
+                values: [
+                    'arm64'
+                ]
+            },
+            {
+                name:
+                    'root-device-type',
+
+                values: [
+                    'ebs'
+                ]
+            }
+        ]
     })
 
-const targetLambda =
-    new aws.lambda.Function(
+const targetInstance =
+    new aws.ec2.Instance(
         'hw31-target',
         {
-            role:
-                lambdaRole.arn,
+            ami:
+                targetAmi.id,
 
-            runtime:
-                'nodejs22.x',
+            instanceType:
+                't4g.micro',
 
-            handler:
-                'index.handler',
+            subnetId:
+                publicSubnetIds.apply(
+                    ids =>
+                        ids[0]
+                ),
 
-            code:
-                lambdaCode,
+            associatePublicIpAddress:
+                true,
 
-            timeout:
-                5
+            vpcSecurityGroupIds: [
+                targetSecurityGroup.id
+            ],
+
+            userData:
+                `#!/bin/bash
+set -eux
+dnf install -y httpd
+cat > /var/www/html/index.html <<'EOF'
+{"status":"ok","source":"hw31-alb-ec2"}
+EOF
+systemctl enable --now httpd
+`
         }
     )
 
@@ -238,18 +254,35 @@ const targetGroup =
     new aws.lb.TargetGroup(
         'hw31-target-group',
         {
+            vpcId,
+
+            port:
+                80,
+
+            protocol:
+                'HTTP',
+
             targetType:
-                'lambda',
+                'instance',
 
             healthCheck: {
                 enabled:
                     true,
 
+                path:
+                    '/',
+
+                protocol:
+                    'HTTP',
+
+                matcher:
+                    '200',
+
                 interval:
-                    35,
+                    15,
 
                 timeout:
-                    30,
+                    5,
 
                 healthyThreshold:
                     2,
@@ -260,24 +293,6 @@ const targetGroup =
         }
     )
 
-const invokePermission =
-    new aws.lambda.Permission(
-        'hw31-alb-invoke',
-        {
-            action:
-                'lambda:InvokeFunction',
-
-            function:
-                targetLambda.name,
-
-            principal:
-                'elasticloadbalancing.amazonaws.com',
-
-            sourceArn:
-                targetGroup.arn
-        }
-    )
-
 new aws.lb.TargetGroupAttachment(
     'hw31-target-attachment',
     {
@@ -285,12 +300,10 @@ new aws.lb.TargetGroupAttachment(
             targetGroup.arn,
 
         targetId:
-            targetLambda.arn
-    },
-    {
-        dependsOn: [
-            invokePermission
-        ]
+            targetInstance.id,
+
+        port:
+            80
     }
 )
 
