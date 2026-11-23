@@ -131,6 +131,15 @@ jobs:
         run: |
           npm ci
           npm --prefix infra ci
+      - name: Prepare evidence files
+        shell: bash
+        run: |
+          mkdir -p evidence
+          : > evidence/evidence.txt
+          : > evidence/deployment.json
+          : > evidence/plan.json
+          : > evidence/rollout.txt
+          : > evidence/build.log
       - name: Install kind and Pulumi
         shell: bash
         run: |
