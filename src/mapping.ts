@@ -129,7 +129,7 @@ export function estimatePlanMonthlyUsd(
     deployments.push({})
   }
 
-  const total = deployments.reduce(
+  const total = deployments.reduce<number>(
     (sum, item) => sum + deploymentMonthlyUsd(item, rates),
     0
   )
