@@ -29,7 +29,7 @@ node -e '
 ' "$ROLE_JSON" "$POLICY_JSON"   > evidence/iam.json
 
 ALLOWED="$(
-  aws iam simulate-principal-policy     --policy-source-arn "$ROLE_ARN"     --action-names ec2:DescribeVpcs     --query 'EvaluationResults[0].EvalDecision'     --output text
+  aws iam simulate-principal-policy     --policy-source-arn "$ROLE_ARN"     --action-names ec2:DescribeVpcs     --context-entries ContextKeyName=aws:RequestedRegion,ContextKeyValues="$AWS_REGION",ContextKeyType=string     --query 'EvaluationResults[0].EvalDecision'     --output text
 )"
 
 DENIED="$(
