@@ -5,8 +5,8 @@ export type PlanCostRates = {
 }
 
 export const HW32_RATES: PlanCostRates = {
-  cpuPerVcpuHour: 0.04,
-  memoryPerGiBHour: 0.004,
+  cpuPerVcpuHour: 0.0445,
+  memoryPerGiBHour: 0.0049225,
   hoursPerMonth: 730
 }
 
