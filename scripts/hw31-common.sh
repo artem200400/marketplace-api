@@ -8,7 +8,7 @@ ROOT="$(
 
 cd "$ROOT"
 
-: "${AWS_REGION:=eu-central-1}"
+: "${AWS_REGION:=eu-north-1}"
 export AWS_REGION
 
 pulumi_login() {
