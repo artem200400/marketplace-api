@@ -437,6 +437,8 @@ const teardownPolicy =
                                 'ec2:DeleteVpc',
                                 'ec2:DescribeAddresses',
                                 'ec2:DescribeAvailabilityZones',
+                                'ec2:DescribeImages',
+                                'ec2:DescribeInstances',
                                 'ec2:DescribeInternetGateways',
                                 'ec2:DescribeNatGateways',
                                 'ec2:DescribeRouteTables',
@@ -447,6 +449,8 @@ const teardownPolicy =
                                 'ec2:DisassociateAddress',
                                 'ec2:DisassociateRouteTable',
                                 'ec2:ReleaseAddress',
+                                'ec2:RunInstances',
+                                'ec2:TerminateInstances',
 
                                 'elasticloadbalancing:AddTags',
                                 'elasticloadbalancing:CreateListener',
