@@ -1040,16 +1040,18 @@ Demo values не захардкоджені: вони рахуються зі с
 
 teardown-run: PENDING — після реального `workflow_dispatch` сюди треба поставити ПЕРШИМ посиланням конкретний `https://github.com/artem200400/marketplace-api/actions/runs/<id>`.
 
-region: `eu-central-1`
+> Live demo status (2026-11-23): base та IAM evidence зібрані. AWS поставив новий Free Plan project на account-verification hold; `EC2 RunInstances` повертає `Blocked: This account is currently blocked and not recognized as a valid account`. Paid demo resources після невдалих запусків були видалені; live ALB/failover/NAT evidence і фінальний teardown-run залишаються pending до зняття AWS hold.
+
+region: `eu-north-1`
 
 HW31 має два незалежні Pulumi-проєкти:
 
 - `infra/base/` — бюджет, VPC, 2 public + 2 private subnets у двох AZ, IGW, route tables, security groups, GitHub OIDC role. У base немає RDS, ALB, NAT, EC2 або EIP.
-- `infra/demo/` — короткоживучі платні ресурси: RDS Multi-AZ, ALB + Lambda target і NAT тільки коли `withNat=true`.
+- `infra/demo/` — короткоживучі платні ресурси: RDS Multi-AZ, ALB + EC2 `t4g.micro` target і NAT тільки коли `withNat=true`.
 
 ### Вартість
 
-Перед live-run ставки треба ще раз звірити з AWS pricing. Нижче — контрольна таблиця зі знімка завдання від 2026-08-24 для `eu-central-1`; місяць = 730 годин.
+Перед live-run ставки треба ще раз звірити з AWS pricing. Нижче — контрольна таблиця зі знімка завдання від 2026-08-24 для `eu-central-1`; поточний live account працює в `eu-north-1`; місяць = 730 годин.
 
 | Рядок | Ставка / база | 730 годин |
 | --- | ---: | ---: |
@@ -1142,7 +1144,7 @@ Demo використовує саме `aws.rds.Instance`, а не Multi-AZ DB c
 
 ### ALB
 
-ALB Internet-facing, у двох public subnets. Target — Lambda, тому HW31 не додає EC2 instance і ще одну Public IPv4. `demo:alb` записує:
+ALB Internet-facing, у двох public subnets. Target — EC2 `t4g.micro` на Amazon Linux 2023; user-data піднімає HTTP server, а target group перевіряє HTTP 200. `demo:alb` записує:
 
 ```text
 alb-dns=...
@@ -1195,7 +1197,7 @@ evidence/demos.txt
 
 ### Teardown gate
 
-`.github/workflows/teardown.yml` має `schedule` і `workflow_dispatch`, отримує AWS credentials через OIDC, зносить `demo`, потім `base`, після чого перевіряє `eu-central-1` і `us-east-1`.
+`.github/workflows/teardown.yml` має `schedule` і `workflow_dispatch`, отримує AWS credentials через OIDC, зносить `demo`, потім `base`, після чого перевіряє вибраний project region `eu-north-1`.
 
 У фінальному dispatch-run мають бути:
 
@@ -1214,7 +1216,7 @@ eip-left=0
 
 ```bash
 export SKIP_VAULT=1
-export AWS_REGION=eu-central-1
+export AWS_REGION=eu-north-1
 export HW31_BUDGET_EMAIL=<your-email>
 export HW31_DB_PASSWORD=<temporary-rds-password>
 export PULUMI_ACCESS_TOKEN=<pulumi-cloud-token>
