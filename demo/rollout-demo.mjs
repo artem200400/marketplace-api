@@ -9,7 +9,7 @@ import { join } from 'node:path'
 const namespace = 'marketplace-hw28'
 const deployment = 'marketplace-api'
 const endpoint = process.env.HW28_URL ?? 'http://127.0.0.1:30080/healthz'
-const minimumRequests = 5000
+const minimumRequests = Number(process.env.HW28_MIN_REQUESTS ?? '5000')
 const concurrency = Number(process.env.HW28_CONCURRENCY ?? '64')
 
 function run(command, args, options = {}) {

@@ -8,6 +8,8 @@ if ! kind get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
   kind create cluster     --name "$CLUSTER"     --config k8s/kind-config.yaml
 fi
 
-kind load docker-image   "$IMAGE"   --name "$CLUSTER"
+if [ "${SKIP_KIND_LOAD:-0}" != "1" ]; then
+  kind load docker-image "$IMAGE" --name "$CLUSTER"
+fi
 
 kubectl cluster-info   --context "kind-$CLUSTER" >/dev/null

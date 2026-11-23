@@ -1,0 +1,254 @@
+name: HW32 PR Pipeline
+
+on:
+  pull_request:
+  push:
+    branches:
+      - hw-32
+
+concurrency:
+  group: hw32-pr-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Type gate
+        run: npm run gate:types
+      - name: Style gate
+        run: npm run gate:lint
+      - name: Contract gate
+        shell: bash
+        run: |
+          BASE_REF="${GITHUB_BASE_REF:-hw-31}"
+          git fetch origin "$BASE_REF" --depth=1
+          mkdir -p .hw32
+          git show FETCH_HEAD:openapi/openapi.yaml > .hw32/base-openapi.yaml
+          docker run --rm -v "$PWD:/repo:ro" -w /repo tufin/oasdiff:v1.39.0             breaking /repo/.hw32/base-openapi.yaml /repo/openapi/openapi.yaml
+      - name: Architecture gate
+        run: npm run gate:architecture
+      - name: Validate workflows
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+
+  build:
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+      image_ref: ${{ steps.image.outputs.image_ref }}
+      build_log: ${{ steps.image.outputs.build_log }}
+      scan_exit: ${{ steps.scan.outputs.scan_exit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Login to GHCR
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/hw32-ghcr-login.mjs
+      - name: Build once and push
+        id: image
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p .hw32
+          IMAGE_REPO="ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          IMAGE_REF="$IMAGE_REPO:$HEAD_SHA"
+          printf 'ci-build-token' > "$RUNNER_TEMP/npm_token"
+          printf 'build-image=%s\n' "$HEAD_SHA" > .hw32/build.log
+          docker buildx build             --secret id=npm_token,src="$RUNNER_TEMP/npm_token"             --tag "$IMAGE_REF"             --push             --metadata-file .hw32/build-metadata.json             --file docker/Dockerfile             .
+          DIGEST="$(jq -r '."containerimage.digest"' .hw32/build-metadata.json)"
+          test "$DIGEST" != "null"
+          test -n "$DIGEST"
+          {
+            echo "digest=$DIGEST"
+            echo "image_ref=$IMAGE_REF"
+            echo "build_log=$(cat .hw32/build.log)"
+          } >> "$GITHUB_OUTPUT"
+      - name: Image scan gate
+        id: scan
+        shell: bash
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set +e
+          docker pull "$IMAGE_REF@$DIGEST"
+          APP_IMAGE="$IMAGE_REF@$DIGEST" SCAN_MAX=200 npm run scan
+          rc=$?
+          echo "scan_exit=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+  deploy-test:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    env:
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      IMAGE_REF: ${{ needs.build.outputs.image_ref }}
+      BUILT_DIGEST: ${{ needs.build.outputs.digest }}
+      APP_DB_PASSWORD: grader-secret
+      SKIP_VAULT: "1"
+      PULUMI_CONFIG_PASSPHRASE: hw32-ci
+      PULUMI_BACKEND_URL: file:///tmp/hw32-pulumi
+      HW28_MIN_REQUESTS: "2000"
+      COST_BUDGET_USD: "10"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix infra ci
+      - name: Prepare evidence files
+        shell: bash
+        run: |
+          mkdir -p evidence
+          : > evidence/evidence.txt
+          : > evidence/deployment.json
+          : > evidence/plan.json
+          : > evidence/rollout.txt
+          : > evidence/build.log
+      - name: Install kind and Pulumi
+        shell: bash
+        run: |
+          curl -fsSLo /tmp/kind https://kind.sigs.k8s.io/dl/v0.30.0/kind-linux-amd64
+          chmod +x /tmp/kind
+          sudo mv /tmp/kind /usr/local/bin/kind
+          curl -fsSL https://get.pulumi.com | sh
+          echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
+      - name: Login and pull exact digest
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/hw32-ghcr-login.mjs
+          docker pull "$IMAGE_REF@$BUILT_DIGEST"
+          docker tag "$IMAGE_REF@$BUILT_DIGEST" "$IMAGE_REF"
+      - name: Verify GitHub OIDC token
+        shell: bash
+        run: |
+          mkdir -p evidence
+          node scripts/hw32-request-oidc.mjs evidence/oidc.jwt
+          node scripts/oidc-gate.mjs             --token-file evidence/oidc.jwt             --policy oidc/policy.json             --discovery https://token.actions.githubusercontent.com/.well-known/openid-configuration             | tee evidence/oidc.txt
+      - name: Create kind cluster and load built image
+        run: APP_IMAGE="$IMAGE_REF" npm run cluster:up
+      - name: Pulumi preview
+        shell: bash
+        run: |
+          mkdir -p evidence /tmp/hw32-pulumi
+          pulumi login "$PULUMI_BACKEND_URL"
+          pulumi -C infra stack select dev --create
+          APP_IMAGE="$IMAGE_REF@$BUILT_DIGEST" REV="$HEAD_SHA"             pulumi -C infra preview --json > evidence/plan.json
+      - name: Cost gate
+        shell: bash
+        env:
+          COST_APPROVED: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'cost-approved') }}
+        run: |
+          set +e
+          PLAN_JSON=evidence/plan.json npm run gate:cost
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] && [ "$COST_APPROVED" != "true" ]; then
+            exit "$rc"
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "cost-gate-bypass=cost-approved"
+          fi
+      - name: Pulumi deploy exact digest
+        shell: bash
+        run: |
+          APP_IMAGE="$IMAGE_REF@$BUILT_DIGEST" REV="$HEAD_SHA" npm run up
+          kubectl -n marketplace-hw28 get deploy marketplace-api -o json > evidence/deployment.json
+      - name: Rollout gate
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run demo:rollout | tee evidence/rollout.txt
+      - name: Assemble pipeline evidence
+        if: always()
+        shell: bash
+        env:
+          BUILD_LOG_LINE: ${{ needs.build.outputs.build_log }}
+          SCAN_EXIT: ${{ needs.build.outputs.scan_exit }}
+        run: |
+          mkdir -p evidence
+          printf '%s\n' "$BUILD_LOG_LINE" > evidence/build.log
+          DEPLOYED_REF="$(jq -r '.spec.template.spec.containers[0].image // ""' evidence/deployment.json 2>/dev/null || true)"
+          DEPLOYED_DIGEST="${DEPLOYED_REF##*@}"
+          BUILD_INVOCATIONS="$(wc -l < evidence/build.log | tr -d ' ')"
+          ROLLOUT_REQUESTS="$(awk -F= '/^requests=/{print $2}' evidence/rollout.txt 2>/dev/null | tail -1)"
+          ROLLOUT_OK="$(awk -F= '/^ok=/{print $2}' evidence/rollout.txt 2>/dev/null | tail -1)"
+          ROLLOUT_FAILED="$(awk -F= '/^failed=/{print $2}' evidence/rollout.txt 2>/dev/null | tail -1)"
+          ROLLOUT_SECONDS="$(awk -F= '/^rollout-seconds=/{print $2}' evidence/rollout.txt 2>/dev/null | tail -1)"
+          OIDC_ISS="$(awk -F= '/^oidc-iss=/{print $2}' evidence/oidc.txt 2>/dev/null | tail -1)"
+          OIDC_AUD="$(awk -F= '/^oidc-aud=/{print $2}' evidence/oidc.txt 2>/dev/null | tail -1)"
+          OIDC_SUB="$(awk -F= '/^oidc-sub=/{print $2}' evidence/oidc.txt 2>/dev/null | tail -1)"
+          OIDC_SIG="$(awk -F= '/^sig-verified=/{print $2}' evidence/oidc.txt 2>/dev/null | tail -1)"
+          SECRET_IN_MANIFEST="$(node -e 'const fs=require("fs");const p="evidence/deployment.json";if(!fs.existsSync(p)){console.log(0);process.exit(0)}const s=fs.readFileSync(p,"utf8");const v=process.env.APP_DB_PASSWORD||"";console.log(v?s.split(v).length-1:0)')"
+          {
+            echo "run-id=${{ github.run_id }}"
+            echo "head-sha=$HEAD_SHA"
+            echo "image-ref=$IMAGE_REF"
+            echo "built-digest=$BUILT_DIGEST"
+            echo "deployed-digest=$DEPLOYED_DIGEST"
+            echo "build-invocations=$BUILD_INVOCATIONS"
+            echo "creds-source=oidc"
+            echo "oidc-iss=$OIDC_ISS"
+            echo "oidc-aud=$OIDC_AUD"
+            echo "oidc-sub=$OIDC_SUB"
+            echo "oidc-sig-verified=${OIDC_SIG:-0}"
+            echo "rollout-requests=${ROLLOUT_REQUESTS:-0}"
+            echo "rollout-ok=${ROLLOUT_OK:-0}"
+            echo "rollout-failed=${ROLLOUT_FAILED:-999999}"
+            echo "rollout-seconds=${ROLLOUT_SECONDS:-0}"
+            echo "secret-in-manifest=$SECRET_IN_MANIFEST"
+            echo "gate-scan-exit=${SCAN_EXIT:-1}"
+          } > evidence/evidence.txt
+      - name: Upload pipeline evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pipeline-evidence
+          if-no-files-found: error
+          path: |
+            evidence/evidence.txt
+            evidence/deployment.json
+            evidence/plan.json
+            evidence/rollout.txt
+            evidence/build.log
+      - name: Cleanup kind
+        if: always()
+        run: npm run cluster:down

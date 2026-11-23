@@ -1,0 +1,81 @@
+name: HW32 Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: Full image reference with tag
+        required: true
+        type: string
+      image_digest:
+        description: sha256 digest produced by the PR build
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    env:
+      IMAGE_REF: ${{ inputs.image_ref }}
+      BUILT_DIGEST: ${{ inputs.image_digest }}
+      APP_DB_PASSWORD: grader-secret
+      SKIP_VAULT: "1"
+      PULUMI_CONFIG_PASSPHRASE: hw32-ci
+      PULUMI_BACKEND_URL: file:///tmp/hw32-pulumi
+      HW28_MIN_REQUESTS: "2000"
+      COST_BUDGET_USD: "10"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix infra ci
+      - name: Install kind and Pulumi
+        shell: bash
+        run: |
+          curl -fsSLo /tmp/kind https://kind.sigs.k8s.io/dl/v0.30.0/kind-linux-amd64
+          chmod +x /tmp/kind
+          sudo mv /tmp/kind /usr/local/bin/kind
+          curl -fsSL https://get.pulumi.com | sh
+          echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
+      - name: Login and pull exact digest
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/hw32-ghcr-login.mjs
+          docker pull "$IMAGE_REF@$BUILT_DIGEST"
+          docker tag "$IMAGE_REF@$BUILT_DIGEST" "$IMAGE_REF"
+      - name: Verify GitHub OIDC token
+        shell: bash
+        run: |
+          mkdir -p evidence
+          node scripts/hw32-request-oidc.mjs evidence/oidc.jwt
+          node scripts/oidc-gate.mjs             --token-file evidence/oidc.jwt             --policy oidc/policy.json             --discovery https://token.actions.githubusercontent.com/.well-known/openid-configuration
+      - name: Create kind cluster and load built image
+        run: APP_IMAGE="$IMAGE_REF" npm run cluster:up
+      - name: Preview and cost gate
+        shell: bash
+        run: |
+          mkdir -p /tmp/hw32-pulumi evidence
+          pulumi login "$PULUMI_BACKEND_URL"
+          pulumi -C infra stack select dev --create
+          APP_IMAGE="$IMAGE_REF@$BUILT_DIGEST" REV="$GITHUB_SHA"             pulumi -C infra preview --json > evidence/plan.json
+          PLAN_JSON=evidence/plan.json npm run gate:cost
+      - name: Deploy promoted digest
+        shell: bash
+        run: |
+          APP_IMAGE="$IMAGE_REF@$BUILT_DIGEST" REV="$GITHUB_SHA" npm run up
+          npm run demo:rollout
+      - name: Cleanup kind
+        if: always()
+        run: npm run cluster:down
