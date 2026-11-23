@@ -50,7 +50,7 @@ sum_region_query() {
   local region
   local value
 
-  for region in "$AWS_REGION" us-east-1; do
+  for region in "$AWS_REGION"; do
     value="$(
       aws "$service" "$@"         --region "$region"         --output text
     )"
@@ -62,7 +62,7 @@ sum_region_query() {
 }
 
 TAGGED_RESOURCES_LEFT=0
-for region in "$AWS_REGION" us-east-1; do
+for region in "$AWS_REGION"; do
   value="$(
     aws resourcegroupstaggingapi get-resources       --region "$region"       --tag-filters Key=Project,Values=nodejs-pro-hw31       --query 'length(ResourceTagMappingList)'       --output text
   )"
@@ -79,7 +79,7 @@ ALB_LEFT="$(
 )"
 
 NAT_LEFT=0
-for region in "$AWS_REGION" us-east-1; do
+for region in "$AWS_REGION"; do
   value="$(
     aws ec2 describe-nat-gateways       --region "$region"       --filter Name=state,Values=available       --query 'length(NatGateways)'       --output text
   )"
