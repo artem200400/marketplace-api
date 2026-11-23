@@ -56,7 +56,14 @@
     "demo:nat": "bash scripts/with-secrets.sh dev bash scripts/hw31-demo-nat.sh",
     "demo:alb": "bash scripts/with-secrets.sh dev bash scripts/hw31-demo-alb.sh",
     "evidence:base": "bash scripts/with-secrets.sh dev bash scripts/hw31-base-evidence.sh",
-    "evidence:iam": "bash scripts/with-secrets.sh dev bash scripts/hw31-iam-evidence.sh"
+    "evidence:iam": "bash scripts/with-secrets.sh dev bash scripts/hw31-iam-evidence.sh",
+    "lint": "npm run gate:lint",
+    "gate:types": "npx tsc --noEmit",
+    "gate:lint": "npx --yes eslint@9.39.1 \"scripts/hw32-*.mjs\" --max-warnings=0",
+    "gate:architecture": "npx --yes dependency-cruiser@18.8.0 --config .dependency-cruiser.cjs -- src",
+    "demo:gates": "node scripts/hw32-demo-gates.mjs",
+    "demo:oidc": "node scripts/hw32-demo-oidc.mjs",
+    "gate:cost": "npm run build --silent && node scripts/hw32-cost-gate.mjs"
   },
   "keywords": [],
   "author": "",
