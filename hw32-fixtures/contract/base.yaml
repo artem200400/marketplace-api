@@ -1,0 +1,10 @@
+openapi: 3.0.3
+info:
+  title: HW32 fixture
+  version: 1.0.0
+paths:
+  /ping:
+    get:
+      responses:
+        '200':
+          description: pong
