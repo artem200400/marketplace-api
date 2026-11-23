@@ -25,7 +25,7 @@ jobs:
       APP_DB_PASSWORD: grader-secret
       SKIP_VAULT: "1"
       PULUMI_CONFIG_PASSPHRASE: hw32-ci
-      PULUMI_BACKEND_URL: file://${{ runner.temp }}/hw32-pulumi
+      PULUMI_BACKEND_URL: file:///tmp/hw32-pulumi
       HW28_MIN_REQUESTS: "2000"
       COST_BUDGET_USD: "10"
     steps:
@@ -66,7 +66,7 @@ jobs:
       - name: Preview and cost gate
         shell: bash
         run: |
-          mkdir -p "$RUNNER_TEMP/hw32-pulumi" evidence
+          mkdir -p /tmp/hw32-pulumi evidence
           pulumi login "$PULUMI_BACKEND_URL"
           pulumi -C infra stack select dev --create
           APP_IMAGE="$IMAGE_REF@$BUILT_DIGEST" REV="$GITHUB_SHA"             pulumi -C infra preview --json > evidence/plan.json
