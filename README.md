@@ -1245,3 +1245,169 @@ npm run destroy:demo
 ```
 
 Не запускай `up:demo`, поки не готовий одразу пройти demos і teardown.
+
+## CI/CD
+
+HW32 переносить перевірки з локального HW28 у GitHub Actions. Хмарний акаунт для HW32 не потрібен: PR pipeline піднімає локальний kind на GitHub-hosted runner, використовує файловий Pulumi backend і деплоїть Kubernetes ресурси через ту саму Pulumi-програму з `infra/`.
+
+Схема PR pipeline:
+
+```text
+quality
+  ├─ tsc --noEmit
+  ├─ ESLint
+  ├─ oasdiff breaking
+  ├─ dependency-cruiser
+  └─ actionlint
+       ↓
+build
+  ├─ image build exactly once
+  ├─ push to GHCR
+  ├─ digest output
+  └─ vulnerability scan gate
+       ↓
+deploy-test
+  ├─ verify GitHub OIDC signature + iss/aud/sub
+  ├─ kind
+  ├─ pulumi preview
+  ├─ cost gate
+  ├─ pulumi up by exact digest
+  ├─ demo:rollout (failed=0)
+  └─ pipeline-evidence artifact
+```
+
+Другий workflow, `.github/workflows/hw32-deploy.yml`, запускається вручну через `workflow_dispatch` і приймає вже готові `image_ref` + `image_digest`. Він не перебудовує образ: promote відбувається за digest.
+
+### OIDC
+
+Політика довіри знаходиться в:
+
+```text
+oidc/policy.json
+```
+
+Гейт:
+
+```text
+scripts/oidc-gate.mjs
+```
+
+Він читає OpenID discovery document, бере `jwks_uri`, перевіряє RS256-підпис токена публічним JWK і тільки після цього звіряє `iss`, `aud`, `sub` та час дії токена. Сам JWT у лог не друкується.
+
+Локальне `npm run demo:oidc` створює власну RSA-пару і три токени:
+
+```text
+case=green         -> sig-verified=1 policy-allow=1
+case=foreign-sub   -> sig-verified=1 policy-allow=0
+case=bad-signature -> sig-verified=0 policy-allow=0
+```
+
+### Quality gates
+
+Чотири сходинки PR gate:
+
+1. types/style: `tsc --noEmit` + ESLint;
+2. contract: `oasdiff breaking`;
+3. architecture: dependency-cruiser;
+4. image: scanner з HW28 і порогом.
+
+`npm run demo:gates` запускає той самий клас перевірки на коректному та навмисне зламаному вході й друкує:
+
+```text
+types-ok=0
+types-broken=<non-zero>
+contract-ok=0
+contract-broken=<non-zero>
+architecture-ok=0
+architecture-broken=<non-zero>
+image-ok=0
+image-broken=<non-zero>
+```
+
+### Build once / promote by digest
+
+PR workflow містить рівно один `docker buildx build`. Він пушить образ у GHCR із тегом SHA голови PR та повертає `sha256:...` через job output. Наступна job тягне саме `image-ref@digest`, вантажить байти у kind і передає той самий digest у Pulumi через `APP_IMAGE`.
+
+Тег потрібен для читабельності, але деплой виконується за digest.
+
+### Pipeline evidence
+
+Кожен PR run вивантажує artifact:
+
+```text
+pipeline-evidence
+```
+
+Крок upload виконується з `if: always()`. Усередині:
+
+```text
+evidence.txt
+deployment.json
+plan.json
+rollout.txt
+build.log
+```
+
+`evidence.txt` містить `run-id`, `head-sha`, image refs/digests, OIDC claims, rollout counters, `secret-in-manifest` і exit code image scan gate. Значення рахуються з реальних файлів і outputs поточного run.
+
+### Secrets
+
+Секрети застосунку не використовуються під час build. Вони приходять тільки в runtime через обгортку `scripts/with-secrets.sh`.
+
+| Змінна | Джерело | Використання |
+| --- | --- | --- |
+| `APP_DB_PASSWORD` | сховище секретів із HW11; у grader/CI передається через export при `SKIP_VAULT=1` | Kubernetes Secret через `secretKeyRef` |
+
+Pipeline не має довгоживучого cloud credential або registry password. GHCR використовує короткоживучий `GITHUB_TOKEN`, який GitHub видає для конкретного run; OIDC token теж видається тільки job із `id-token: write`.
+
+| Pipeline secret | Де береться | Навіщо |
+| --- | --- | --- |
+| custom repository secrets | немає | HW32 не потребує AWS/GCP/Azure key |
+| `GITHUB_TOKEN` | автоматичний GitHub runtime token, не repository secret | GHCR push/pull |
+
+Межа masking: маскування GitHub не вважається захистом. Workflow не робить `echo "$SECRET"`, `env`, `printenv` або `set -x` у кроках, що бачать credential. Секрет не повинен потрапляти в лог навіть у перекодованому чи частково зміненому вигляді.
+
+### Cost gate
+
+`src/mapping.ts` читає Pulumi `plan.json` і переводить CPU/memory requests Kubernetes Deployment у місячну оцінку. Для навчальної оцінки використані on-demand ставки GKE Autopilot general-purpose:
+
+| Ресурс | Ставка |
+| --- | ---: |
+| vCPU | $0.0445 / vCPU-hour |
+| Memory | $0.0049225 / GiB-hour |
+| Month | 730 hours |
+
+Джерело: https://cloud.google.com/kubernetes-engine/pricing
+
+Гейт запускається через:
+
+```bash
+PLAN_JSON=/tmp/hw32/plan.json COST_BUDGET_USD=10 npm run gate:cost
+```
+
+Він друкує `budget-usd`, `plan-usd`, `gate=pass|fail` і повертає ненульовий exit code, якщо бюджет перевищено.
+
+cost-gate-bypass-label: cost-approved
+
+### HW32 Grading
+
+```bash
+git clone <repository> && cd <repository>
+git checkout hw-32
+npm ci
+
+export SKIP_VAULT=1
+export APP_DB_PASSWORD=grader-secret
+
+npm run demo:gates
+npm run demo:oidc
+
+PLAN_JSON=/tmp/hw32/plan.json COST_BUDGET_USD=0 npm run gate:cost
+# expected: gate=fail and non-zero exit
+
+PLAN_JSON=/tmp/hw32/plan.json COST_BUDGET_USD=999999 npm run gate:cost
+# expected: gate=pass and exit 0
+```
+
+Локальні `demo:gates` і `demo:oidc` не ходять у GitHub і не потребують Kubernetes cluster. `gate:cost` читає `plan.json` із завантаженого `pipeline-evidence`.
+
