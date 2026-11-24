@@ -1,3 +1,4 @@
+import { inTransaction, placeOrder } from './outbox/order-service.js'
 import {
     BadRequestException,
     Body,
@@ -139,161 +140,25 @@ export class OrdersController {
             )
         }
 
-        const resolvedItems:
-            Array<{
-                product_id: string
-                quantity: number
-                unit_price_cents: number
-            }> = []
-
-        for (
-            const item
-            of body.items
-        ) {
-            const productResult =
-                await this.database
-                    .query<ProductPriceRow>(
-                        `
-                        SELECT
-                            id::text,
-                            price_cents
-                        FROM products
-                        WHERE id = $1
-                        `,
-                        [
-                            item.product_id
-                        ]
-                    )
-
-            const product =
-                productResult.rows[0]
-
-            if (!product) {
-                throw new BadRequestException(
-                    `Product ${item.product_id} does not exist`
-                )
+        try {
+            const order = await this.database.withClient(client =>
+                inTransaction(client, () => placeOrder(client, {
+                    userId: user.id,
+                    idempotencyKey,
+                    items: body.items
+                }))
+            )
+            return {
+                ...order,
+                user_id: user.id,
+                status: (await this.orders.findOrderOwner(order.id))?.status ?? 'pending'
             }
-
-            resolvedItems.push({
-                product_id:
-                    product.id,
-
-                quantity:
-                    item.quantity,
-
-                unit_price_cents:
-                    product.price_cents
-            })
-        }
-
-        const totalCents =
-            resolvedItems.reduce(
-                (
-                    total,
-                    item
-                ) =>
-                    total +
-                    item.unit_price_cents *
-                    item.quantity,
-                0
-            )
-
-        const orderResult =
-            await this.database
-                .query<OrderRow>(
-                    `
-                    INSERT INTO orders (
-                        user_id,
-                        status,
-                        total_amount_cents
-                    )
-                    VALUES (
-                        $1,
-                        'pending',
-                        $2
-                    )
-                    RETURNING
-                        id::text,
-                        total_amount_cents,
-                        created_at
-                    `,
-                    [
-                        user.id,
-                        totalCents
-                    ]
-                )
-
-        const order =
-            orderResult.rows[0]
-
-        for (
-            const item
-            of resolvedItems
-        ) {
-            await this.database.query(
-                `
-                INSERT INTO order_items (
-                    order_id,
-                    product_id,
-                    quantity,
-                    unit_price_cents
-                )
-                VALUES (
-                    $1,
-                    $2,
-                    $3,
-                    $4
-                )
-                `,
-                [
-                    order.id,
-                    item.product_id,
-                    item.quantity,
-                    item.unit_price_cents
-                ]
-            )
-        }
-
-        /*
-         * HW19:
-         * order.placed публикується
-         * через business layer,
-         * а не напряму з controller.
-         */
-        await this.orders
-            .publishOrderPlaced({
-                id:
-                    order.id,
-
-                userId:
-                    user.id,
-
-                totalCents:
-                    order
-                        .total_amount_cents
-            })
-
-        return {
-            id:
-                order.id,
-
-            user_id:
-                user.id,
-
-            status:
-                'pending',
-
-            items:
-                resolvedItems,
-
-            total_cents:
-                order
-                    .total_amount_cents,
-
-            created_at:
-                order
-                    .created_at
-                    .toISOString()
+        } catch (error) {
+            if (error instanceof Error &&
+                /^(INVALID_|PRODUCT_NOT_FOUND|IDEMPOTENCY_)/.test(error.message)) {
+                throw new BadRequestException(error.message)
+            }
+            throw error
         }
     }
 

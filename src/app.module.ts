@@ -1,3 +1,5 @@
+import { RabbitOutboxRelay } from './outbox/rabbit-relay.service.js'
+
 import {
     Module
 } from '@nestjs/common'
@@ -85,6 +87,7 @@ import {
         OrdersGateway,
         RabbitPublisher,
         RabbitConsumer,
+        RabbitOutboxRelay,
         FilesService,
         ObserveService,
         ObserveRepository

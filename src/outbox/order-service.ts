@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg'
+import { createHash } from 'node:crypto'
 
 export type OrderInput = {
   userId: string
@@ -87,16 +88,19 @@ export async function placeOrder(
   }
 
   // Explicit event contract: never serialize an ORM entity into a public event.
+  // UUID based on business identity, compatible with RabbitMQ consumer dedup.
+  const hash = createHash('sha256').update('order.placed:' + order.id).digest('hex')
+  const eventId = [hash.slice(0,8),hash.slice(8,12),'5'+hash.slice(13,16),
+    ((parseInt(hash[16],16)&3)|8).toString(16)+hash.slice(17,20),hash.slice(20,32)].join('-')
   const payload = {
-    version: 1, orderId: order.id, userId: input.userId,
-    totalCents: total,
-    items: items.map(i => ({
-      productId: i.product_id, quantity: i.quantity, unitPriceCents: i.unit_price_cents
-    }))
+    eventId,
+    type: 'order.placed',
+    occurredAt: order.created_at.toISOString(),
+    data: { orderId: order.id, userId: input.userId, totalCents: total }
   }
   await client.query(
     `INSERT INTO outbox(aggregate_type,aggregate_id,type,payload)
-     VALUES('Order',$1,'OrderPlaced',$2::jsonb)`,
+     VALUES('Order',$1,'order.placed',$2::jsonb)`,
     [order.id, JSON.stringify(payload)]
   )
   // Crash injection happens AFTER outbox insertion but BEFORE COMMIT.

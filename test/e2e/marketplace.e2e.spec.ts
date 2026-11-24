@@ -177,6 +177,27 @@ describe(
                     );
                 `)
 
+                // The E2E suite defines its own isolated schema.
+                await pool.query(`
+                  CREATE TABLE order_idempotency (
+                    user_id bigint NOT NULL REFERENCES users(id),
+                    idempotency_key varchar(200) NOT NULL,
+                    order_id bigint REFERENCES orders(id) ON DELETE CASCADE,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    PRIMARY KEY(user_id,idempotency_key)
+                  );
+                  CREATE TABLE outbox (
+                    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+                    aggregate_type varchar(80) NOT NULL,
+                    aggregate_id varchar(80) NOT NULL,
+                    type varchar(120) NOT NULL,
+                    payload jsonb NOT NULL,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    published_at timestamptz,
+                    attempts integer NOT NULL DEFAULT 0
+                  );
+                `)
+
                 await pool.query(
                     `
                     INSERT INTO users (
