@@ -118,6 +118,22 @@ try {
   const afterLogout = await fetch(new URL('/orders/'+a.id,base),{
     headers:{Authorization:'Bearer '+other.access_token}})
   assert.equal(afterLogout.status,401)
+  // A shared database limiter must reject excessive login attempts with 429.
+  let throttled = false
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const response = await fetch(new URL('/auth/login',base), {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:'unknown-'+randomUUID()+'@example.invalid',password})
+    })
+    if (response.status === 429) {
+      assert.match(response.headers.get('content-type') ?? '',/application\/problem\+json/)
+      throttled = true
+      break
+    }
+    assert.equal(response.status,401)
+  }
+  assert.equal(throttled,true,'auth login attempts must be rate limited')
+  console.log('login-throttled=429')
   console.log('logout-revoked=401')
   console.log('anonymous=401')
   console.log('foreign=403')
