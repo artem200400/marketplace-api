@@ -478,3 +478,61 @@ Run:
 ```bash
 npm run test:integration
 ```
+
+## Outbox та ідемпотентність
+
+HW22 uses a PostgreSQL transactional outbox. `POST /orders` requires an
+`Idempotency-Key` header: the unique (user_id, idempotency_key) intent
+constraint and `ON CONFLICT DO NOTHING` ensure concurrent identical keys
+return one order. Different keys may intentionally create identical orders.
+
+The order, its items, the idempotency record and `OrderPlaced` (version 1)
+event are committed in **one transaction**. The JSON event is an explicit
+contract, not a serialized ORM model. Polling relay selects unpublished events
+with `FOR UPDATE SKIP LOCKED` and publishes over HTTP to a **separate Node
+process**, which applies an effect by unique order ID and records
+`processed_messages` in the same DB transaction.
+
+Demo failure injection: `demo:crash-write` throws after the outbox INSERT,
+before the business COMMIT; `demo:crash-relay` throws after HTTP publish,
+before UPDATE of published_at, forcing a redelivery. Each demo cleans only
+its own order and event records, runs against a fresh database after migrations
+without needing a separate seed command, prints machine-readable counters,
+and exits nonzero if the invariant fails.
+
+Expected checks (verify actual numbers locally):
+
+```text
+demo:outbox       requests=2 orders=1 outbox=1 published=1 effect=1 processed=1
+demo:crash-write  write-failed=1 orders=0 outbox=0 published=0 deliveries=0 effect=0
+demo:crash-relay  published=1 deliveries=2 applied=1 effect=1 processed=1
+```
+
+The correct order is publish **then** UPDATE published_at. Reversing it
+loses an event if publishing fails after the update; the current order
+can duplicate delivery after a crash, but the consumer deduplicates effects.
+A broker acknowledgment can also be lost after delivery, so consumer
+idempotency is mandatory. `SKIP LOCKED` gives parallelism, **not**
+global ordering. For per-aggregate ordering, partition/serialize by
+aggregate ID. The outbox should be archived/purged on a retention schedule
+after successful publication; this demo does not run background cleanup.
+
+## Grading
+
+```bash
+docker compose up -d --wait
+export DATABASE_URL=postgresql://marketplace_user:marketplace_password@127.0.0.1:6432/marketplace
+export BROKER_URL=http://127.0.0.1:18765
+export SKIP_VAULT=1
+npm ci
+npm run build
+npm run migrate
+npm run demo:outbox
+npm run demo:crash-write
+npm run demo:crash-relay
+```
+
+The HTTP broker for demos runs as a dedicated child process (not inside the
+API or relay process), and is automatically stopped by each demo. To operate
+it independently, run `npm run broker:dev` in one shell and
+`npm run relay:once` in another.
