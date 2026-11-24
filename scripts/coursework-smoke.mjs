@@ -27,6 +27,18 @@ try {
   const a = await api('/orders', init)
   const b = await api('/orders', init)
   assert.equal(a.id, b.id, 'same idempotency intent must not duplicate order')
+  const changed = await fetch(new URL('/orders',base),{
+    method:'POST', headers:{'Content-Type':'application/json','Idempotency-Key':key,...auth},
+    body:JSON.stringify({items:[{product_id:product.id,quantity:2}]})
+  })
+  assert.equal(changed.status,422,'same key with changed payload must fail')
+  assert.match(changed.headers.get('content-type') ?? '',/application\\/problem\\+json/)
+  const invalid = await fetch(new URL('/orders',base),{
+    method:'POST',headers:{'Content-Type':'application/json',...auth},
+    body:JSON.stringify({items:[{product_id:product.id,quantity:0}]})
+  })
+  assert.equal(invalid.status,400)
+  assert.match(invalid.headers.get('content-type') ?? '',/application\\/problem\\+json/)
   let order
   for (let attempt=0; attempt<80; attempt++) {
     order = await api('/orders/' + a.id, {headers:auth})
@@ -78,6 +90,8 @@ try {
   console.log('role-denied=403')
   console.log('refresh-reuse=401')
   console.log('family-revoked=401')
+  console.log('idempotency-conflict=422')
+  console.log('validation=400')
   console.log('requests=2')
   console.log('orders=1')
   console.log('published=1')

@@ -1,3 +1,5 @@
+import { APP_FILTER } from '@nestjs/core'
+import { ProblemFilter } from './http/problem.filter.js'
 import { AuthController } from './auth/auth.controller.js'
 import { AuthService, AccessGuard, AdminGuard } from './auth/auth.service.js'
 import { RabbitOutboxRelay } from './outbox/rabbit-relay.service.js'
@@ -91,6 +93,7 @@ import {
         RabbitPublisher,
         RabbitConsumer,
         RabbitOutboxRelay,
+        { provide: APP_FILTER, useClass: ProblemFilter },
         AuthService,
         AccessGuard,
         AdminGuard,

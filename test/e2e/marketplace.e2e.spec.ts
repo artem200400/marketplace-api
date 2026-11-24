@@ -189,6 +189,7 @@ describe(
                   CREATE TABLE order_idempotency (
                     user_id bigint NOT NULL REFERENCES users(id),
                     idempotency_key varchar(200) NOT NULL,
+                    request_hash char(64),
                     order_id bigint REFERENCES orders(id) ON DELETE CASCADE,
                     created_at timestamptz NOT NULL DEFAULT now(),
                     PRIMARY KEY(user_id,idempotency_key)

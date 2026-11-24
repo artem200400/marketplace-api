@@ -1,4 +1,4 @@
-import { Req, UseGuards, ForbiddenException } from '@nestjs/common'
+import { Req, UseGuards, ForbiddenException, UnprocessableEntityException } from '@nestjs/common'
 import { AccessGuard, AdminGuard } from './auth/auth.service.js'
 import type { AuthenticatedRequest } from './auth/auth.service.js'
 import { inTransaction, placeOrder } from './outbox/order-service.js'
@@ -142,6 +142,9 @@ export class OrdersController {
                 status: (await this.orders.findOrderOwner(order.id))?.status ?? 'pending'
             }
         } catch (error) {
+            if (error instanceof Error && error.message === 'IDEMPOTENCY_CONFLICT') {
+                throw new UnprocessableEntityException(error.message)
+            }
             if (error instanceof Error &&
                 /^(INVALID_|PRODUCT_NOT_FOUND|IDEMPOTENCY_)/.test(error.message)) {
                 throw new BadRequestException(error.message)

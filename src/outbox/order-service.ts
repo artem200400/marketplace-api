@@ -48,18 +48,22 @@ export async function placeOrder(
     !i.product_id || !Number.isInteger(i.quantity) || i.quantity < 1
   )) throw new Error('INVALID_ITEMS')
 
+  // Identical keys with different requests are conflicts, not successful replays.
+  const requestHash = createHash('sha256').update(JSON.stringify(input.items)).digest('hex')
+
   // A unique constraint serializes concurrent requests for the same intent.
   // ON CONFLICT DO NOTHING is atomic; SELECT-before-INSERT would race.
   const claimed = await client.query(
-    `INSERT INTO order_idempotency(user_id, idempotency_key)
-     VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING user_id`,
-    [input.userId, input.idempotencyKey]
+    `INSERT INTO order_idempotency(user_id, idempotency_key, request_hash)
+     VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING user_id`,
+    [input.userId, input.idempotencyKey, requestHash]
   )
   if (claimed.rowCount === 0) {
-    const existing = (await client.query<{ order_id: string | null }>(
-      'SELECT order_id::text FROM order_idempotency WHERE user_id=$1 AND idempotency_key=$2',
+    const existing = (await client.query<{ order_id: string | null; request_hash: string | null }>(
+      'SELECT order_id::text,request_hash FROM order_idempotency WHERE user_id=$1 AND idempotency_key=$2',
       [input.userId, input.idempotencyKey]
     )).rows[0]
+    if (existing?.request_hash !== requestHash) throw new Error('IDEMPOTENCY_CONFLICT')
     if (!existing?.order_id) throw new Error('IDEMPOTENCY_INCOMPLETE')
     return readOrder(client, existing.order_id)
   }
