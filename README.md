@@ -1411,3 +1411,130 @@ PLAN_JSON=/tmp/hw32/plan.json COST_BUDGET_USD=999999 npm run gate:cost
 
 Локальні `demo:gates` і `demo:oidc` не ходять у GitHub і не потребують Kubernetes cluster. `gate:cost` читає `plan.json` із завантаженого `pipeline-evidence`.
 
+
+---
+
+## Coursework — final project acceptance
+
+### Business domain and architectural record
+
+**Marketplace order processing.** The primary business scenario is placing an order, delivering
+an `order.placed` message to RabbitMQ, processing it exactly once at the database effect level,
+and reading `completed` via an independent GET request. NestJS remains the HTTP application
+framework. PostgreSQL is the durable source of truth.
+
+| Domain suitability test | Evidence | Result |
+| --- | --- | --- |
+| Core business entity | Order with items and status | Yes |
+| State transitions | pending → completed by asynchronous consumer | Yes |
+| Concurrency | Transactional checkout + `demo:race` | Yes |
+| External integration | RabbitMQ and HTTP API | Yes |
+| Data invariants | SQL constraints and migration-managed schema | Yes |
+| Background work | Polling outbox relay and RabbitMQ consumer | Yes |
+| Meaningful tests | Docker acceptance and testcontainers suites | Yes |
+
+```mermaid
+flowchart LR
+  Client[HTTP client] --> Controller[NestJS OrdersController]
+  Controller --> Service[Order creation service]
+  Service --> DB[(PostgreSQL: orders + outbox)]
+  DB --> Relay[Outbox polling relay]
+  Relay --> MQ[RabbitMQ]
+  MQ --> Consumer[NestJS consumer]
+  Consumer --> DB
+  Client -->|GET order by id| Controller
+  Service --> Logs[JSON logs and HTTP metrics]
+```
+
+**Trade-offs.** We choose polling outbox because it can be verified against PostgreSQL without
+deploying CDC; Debezium could reduce polling later at greater infrastructure cost.
+We choose `FOR UPDATE SKIP LOCKED` to let multiple relay workers proceed without waiting,
+but delivery order is not globally guaranteed.
+We choose at-least-once broker delivery with a unique event-effect record instead of assuming
+exactly-once delivery across two resource managers. A crash after publish may redeliver;
+the consumer deduplicates and transitions the order in one database transaction.
+
+**Decision log.** Early homework introduced OpenAPI and a simple API. Later steps added
+PostgreSQL migrations, guarded checkout, PgBouncer, Redis, RabbitMQ, files, metrics, Kubernetes,
+AWS infrastructure examples, and GitHub workflows. The final project links the previously
+separate checkout, broker, and status-reading exercises with a transactional outbox and
+a live acceptance test.
+
+### Reproducible local run
+
+Prerequisites: Docker Compose, Node.js 22, npm, Docker daemon. Use only local demo
+credentials supplied by the Compose file; do not expose its ports publicly or reuse
+these passwords in production.
+
+```bash
+npm ci
+docker compose -f docker-compose.yml -f compose.coursework.yml up -d --wait api
+export DATABASE_URL=postgresql://marketplace_user:marketplace_password@127.0.0.1:6432/marketplace
+node scripts/coursework-smoke.mjs
+```
+
+The Compose API service builds, migrates, seeds and starts the NestJS service automatically.
+It listens at `http://127.0.0.1:23000` (Docker maps host 23000 to container 3000).
+`GET /healthz` is liveness and `GET /readyz` is readiness; `GET /metrics` provides metrics.
+`POST /orders` requires the `Idempotency-Key` header and an `items` array, while
+`GET /orders/:id` returns the persisted status. A separate RabbitMQ process and an
+outbox relay are used for asynchronous completion.
+
+On a successful acceptance run the script prints:
+```text
+requests=2
+orders=1
+published=1
+effect=1
+final-status=completed
+coursework-smoke=PASS
+```
+
+These are **expected assertions**, not a claim that every CI run has passed.
+The script exits nonzero if any assertion fails and checks the real PostgreSQL database.
+
+Stop the local stack:
+```bash
+docker compose -f docker-compose.yml -f compose.coursework.yml down
+```
+
+### Coursework evidence and testing
+
+Run `npm run test:integration`, `npm run test:e2e`, `npm run test:contract`,
+`npm run demo:race`, `npm run demo:logs`, `npm run demo:metrics`, and
+`node scripts/coursework-smoke.mjs` as appropriate. The GitHub
+`Coursework acceptance` workflow runs TypeScript checking and the live Docker smoke test.
+See other README sections for earlier homework-specific demos.
+
+| Scoring block | Path | Evidence / limitations |
+| --- | --- | --- |
+| Architecture | Course + extension | This section, NestJS controllers, order service and SQL repository access |
+| Business flow / API | Course + extension | POST/GET live smoke, `demo:race`, OpenAPI contract; compare response schema before grading |
+| Persistence | Course | TypeORM migrations, Postgres, PgBouncer, backup/restore demo |
+| Security | Partial course | Request validation and secret wrapper; complete authentication/ownership authorization is **not** implemented for the coursework flow |
+| Background work | Course + extension | RabbitMQ, transactional outbox, consumer deduplication, completed order status |
+| Docker / deployment | Course + extension | Local Compose service, earlier Docker/Kubernetes and GitHub deployment artifacts; public deployment not claimed |
+| Observability / CI | Course | `/healthz`, `/readyz`, `/metrics`, JSON logging, test suites, live smoke workflow |
+
+**Important gaps:** the coursework checkout currently uses the first seeded user, not a verified
+authenticated principal; do not treat it as a production-safe multi-user API. The existing
+status PATCH endpoint and SSE endpoint also need explicit authorization before public use.
+The API error envelope is not yet uniformly `application/problem+json`.
+For full points on security, implement authenticated identity, owner checks, 401 vs 403,
+refresh-token revocation, and consistent error mapping. The existing filesystem/object storage
+and Kubernetes demos are separate from the main business contour.
+
+### Environment variable sources
+
+| Variable | Local development source | Purpose |
+| --- | --- | --- |
+| `PORT` | `compose.coursework.yml` | API port |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` | Compose environment | Database endpoint |
+| `DB_PASSWORD_FILE` | Local temporary file generated at container startup | Database password file |
+| `DB_URL`, `DATABASE_URL` | Compose environment / external secret provider | Database connection for migrations and demos |
+| `BROKER_URL` | Compose environment / external secret provider | RabbitMQ |
+| `SKIP_VAULT` | Compose local-only grading override | Bypass dev Infisical |
+| `APP_WARMUP_MS`, `APP_DRAIN_MS` | Compose environment | Controlled lifecycle |
+
+Production values must be injected through a secrets manager or runtime secret mounts, not
+the checked-in local Compose defaults. Rotate any exposed credentials before external deployment.
