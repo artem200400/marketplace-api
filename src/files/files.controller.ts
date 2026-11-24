@@ -1,3 +1,6 @@
+import { Req, UseGuards } from '@nestjs/common'
+import { AccessGuard } from '../auth/auth.service.js'
+import type { AuthenticatedRequest } from '../auth/auth.service.js'
 import {
   BadRequestException,
   Body,
@@ -9,15 +12,16 @@ import {
 import { FilesService } from './files.service.js'
 
 @Controller('uploads')
+@UseGuards(AccessGuard)
 export class FilesController {
   constructor(private readonly files: FilesService) {}
 
   @Post('intent')
   async intent(
-    @Headers('x-user-id') userId: string | undefined,
+    @Req() req: AuthenticatedRequest,
     @Body() body: { filename?: string; contentType?: string; size?: number }
   ) {
-    if (!userId) throw new BadRequestException('x-user-id is required')
+    const userId = req.principal!.id
     if (!body.contentType) throw new BadRequestException('contentType is required')
 
     try {
@@ -29,10 +33,10 @@ export class FilesController {
 
   @Post('multipart/intent')
   async multipartIntent(
-    @Headers('x-user-id') userId: string | undefined,
+    @Req() req: AuthenticatedRequest,
     @Body() body: { contentType?: string; size?: number }
   ) {
-    if (!userId) throw new BadRequestException('x-user-id is required')
+    const userId = req.principal!.id
     if (!body.contentType) throw new BadRequestException('contentType is required')
     if (!body.size) throw new BadRequestException('size is required')
 
@@ -45,10 +49,10 @@ export class FilesController {
 
   @Post('multipart/parts')
   async multipartParts(
-    @Headers('x-user-id') userId: string | undefined,
+    @Req() req: AuthenticatedRequest,
     @Body() body: { id?: string }
   ) {
-    if (!userId) throw new BadRequestException('x-user-id is required')
+    const userId = req.principal!.id
     if (!body.id) throw new BadRequestException('id is required')
 
     try {
@@ -60,10 +64,10 @@ export class FilesController {
 
   @Post('commit')
   async commit(
-    @Headers('x-user-id') userId: string | undefined,
+    @Req() req: AuthenticatedRequest,
     @Body() body: { id?: string }
   ) {
-    if (!userId) throw new BadRequestException('x-user-id is required')
+    const userId = req.principal!.id
     if (!body.id) throw new BadRequestException('id is required')
 
     try {

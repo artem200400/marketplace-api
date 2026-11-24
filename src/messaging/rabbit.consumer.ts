@@ -10,6 +10,8 @@ import amqp, {
     type ConsumeMessage
 } from 'amqplib'
 
+import { OrderEventsService } from '../order-events.service.js'
+
 import {
     DatabaseService
 } from '../database/database.service.js'
@@ -50,7 +52,8 @@ export class RabbitConsumer
 
     constructor(
         private readonly database:
-            DatabaseService
+            DatabaseService,
+        private readonly orderEvents: OrderEventsService
     ) { }
 
     async onModuleInit() {
@@ -279,47 +282,32 @@ export class RabbitConsumer
         }
     }
 
-    private async applyEffect(
-        event: OrderPlacedEvent
-    ): Promise<boolean> {
-        /*
-         * Persistent deduplication.
-         *
-         * The event effect can be attempted
-         * many times, but event_id can only
-         * be inserted once.
-         */
-        const result =
-            await this.database.query<{
-                event_id: string
-            }>(
-                `
-                INSERT INTO order_event_effects (
-                    event_id,
-                    order_id,
-                    event_type
+    private async applyEffect(event: OrderPlacedEvent): Promise<boolean> {
+        const applied = await this.database.withClient(async client => {
+            await client.query('BEGIN')
+            try {
+                // The dedup marker and business transition commit atomically.
+                const result = await client.query<{ event_id: string }>(
+                    `INSERT INTO order_event_effects(event_id,order_id,event_type)
+                     VALUES($1,$2,$3)
+                     ON CONFLICT(event_id) DO NOTHING RETURNING event_id::text`,
+                    [event.eventId, event.data.orderId, event.type]
                 )
-                VALUES (
-                    $1,
-                    $2,
-                    $3
-                )
-                ON CONFLICT (
-                    event_id
-                )
-                DO NOTHING
-                RETURNING event_id::text
-                `,
-                [
-                    event.eventId,
-                    event.data.orderId,
-                    event.type
-                ]
-            )
-
-        return (
-            result.rowCount === 1
-        )
+                if (result.rowCount) {
+                    await client.query(
+                        `UPDATE orders SET status='completed'
+                         WHERE id=$1 AND status='pending'`, [event.data.orderId]
+                    )
+                }
+                await client.query('COMMIT')
+                return result.rowCount === 1
+            } catch (error) {
+                await client.query('ROLLBACK')
+                throw error
+            }
+        })
+        if (applied) this.orderEvents.publishStatus(event.data.orderId, 'completed')
+        return applied
     }
 
     async onModuleDestroy() {

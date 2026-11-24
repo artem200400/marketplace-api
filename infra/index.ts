@@ -10,6 +10,10 @@ function requiredEnv(name: string): string {
 }
 
 const appDbPassword = requiredEnv('APP_DB_PASSWORD')
+const authJwtSecret = requiredEnv('AUTH_JWT_SECRET')
+if (Buffer.byteLength(authJwtSecret) < 32) {
+  throw new Error('AUTH_JWT_SECRET must be at least 32 bytes')
+}
 
 const namespace = new k8s.core.v1.Namespace('marketplace-hw28-ns', {
   metadata: {
@@ -24,7 +28,8 @@ const appSecret = new k8s.core.v1.Secret('marketplace-runtime-secret', {
   },
   type: 'Opaque',
   data: {
-    APP_DB_PASSWORD: Buffer.from(appDbPassword).toString('base64')
+    APP_DB_PASSWORD: Buffer.from(appDbPassword).toString('base64'),
+    AUTH_JWT_SECRET: pulumi.secret(Buffer.from(authJwtSecret).toString('base64'))
   }
 })
 
@@ -82,6 +87,15 @@ const deployment = new k8s.apps.v1.Deployment('marketplace-api', {
             { name: 'DB_USER', value: 'marketplace' },
             { name: 'DB_PASSWORD_FILE', value: '/tmp/db-password-not-used' },
             { name: 'DB_URL', value: 'postgresql://marketplace@127.0.0.1:5432/marketplace' },
+            {
+              name: 'AUTH_JWT_SECRET',
+              valueFrom: {
+                secretKeyRef: {
+                  name: appSecret.metadata.name,
+                  key: 'AUTH_JWT_SECRET'
+                }
+              }
+            },
             {
               name: 'APP_DB_PASSWORD',
               valueFrom: {

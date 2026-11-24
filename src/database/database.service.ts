@@ -92,6 +92,12 @@ export class DatabaseService implements OnModuleDestroy {
         )
     }
 
+    async withClient<T>(action: (client: import('pg').PoolClient) => Promise<T>): Promise<T> {
+        const client = await this.pool.connect()
+        try { return await action(client) }
+        finally { client.release() }
+    }
+
     async onModuleDestroy() {
         await this.pool.end()
     }

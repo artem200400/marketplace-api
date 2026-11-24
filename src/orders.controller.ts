@@ -1,3 +1,7 @@
+import { Req, UseGuards, ForbiddenException, UnprocessableEntityException, ConflictException } from '@nestjs/common'
+import { AccessGuard, AdminGuard } from './auth/auth.service.js'
+import type { AuthenticatedRequest } from './auth/auth.service.js'
+import { inTransaction, placeOrder } from './outbox/order-service.js'
 import {
     BadRequestException,
     Body,
@@ -61,6 +65,7 @@ type OrderItemRow = {
 }
 
 @Controller('orders')
+@UseGuards(AccessGuard)
 export class OrdersController {
     constructor(
         private readonly database:
@@ -81,7 +86,10 @@ export class OrdersController {
             string | undefined,
 
         @Body()
-        body: CreateOrderBody
+        body: CreateOrderBody,
+
+        @Req()
+        req: AuthenticatedRequest
     ) {
         if (!idempotencyKey) {
             throw new BadRequestException(
@@ -118,186 +126,38 @@ export class OrdersController {
             }
         }
 
-        const userResult =
-            await this.database.query<{
-                id: string
-            }>(
-                `
-                SELECT id::text
-                FROM users
-                ORDER BY id
-                LIMIT 1
-                `
+        const user = { id: req.principal!.id }
+
+        try {
+            const order = await this.database.withClient(client =>
+                inTransaction(client, () => placeOrder(client, {
+                    userId: user.id,
+                    idempotencyKey,
+                    items: body.items
+                }))
             )
-
-        const user =
-            userResult.rows[0]
-
-        if (!user) {
-            throw new BadRequestException(
-                'No marketplace user exists'
-            )
-        }
-
-        const resolvedItems:
-            Array<{
-                product_id: string
-                quantity: number
-                unit_price_cents: number
-            }> = []
-
-        for (
-            const item
-            of body.items
-        ) {
-            const productResult =
-                await this.database
-                    .query<ProductPriceRow>(
-                        `
-                        SELECT
-                            id::text,
-                            price_cents
-                        FROM products
-                        WHERE id = $1
-                        `,
-                        [
-                            item.product_id
-                        ]
-                    )
-
-            const product =
-                productResult.rows[0]
-
-            if (!product) {
-                throw new BadRequestException(
-                    `Product ${item.product_id} does not exist`
-                )
+            return {
+                ...order,
+                user_id: user.id,
+                status: (await this.orders.findOrderOwner(order.id))?.status ?? 'pending'
             }
-
-            resolvedItems.push({
-                product_id:
-                    product.id,
-
-                quantity:
-                    item.quantity,
-
-                unit_price_cents:
-                    product.price_cents
-            })
-        }
-
-        const totalCents =
-            resolvedItems.reduce(
-                (
-                    total,
-                    item
-                ) =>
-                    total +
-                    item.unit_price_cents *
-                    item.quantity,
-                0
-            )
-
-        const orderResult =
-            await this.database
-                .query<OrderRow>(
-                    `
-                    INSERT INTO orders (
-                        user_id,
-                        status,
-                        total_amount_cents
-                    )
-                    VALUES (
-                        $1,
-                        'pending',
-                        $2
-                    )
-                    RETURNING
-                        id::text,
-                        total_amount_cents,
-                        created_at
-                    `,
-                    [
-                        user.id,
-                        totalCents
-                    ]
-                )
-
-        const order =
-            orderResult.rows[0]
-
-        for (
-            const item
-            of resolvedItems
-        ) {
-            await this.database.query(
-                `
-                INSERT INTO order_items (
-                    order_id,
-                    product_id,
-                    quantity,
-                    unit_price_cents
-                )
-                VALUES (
-                    $1,
-                    $2,
-                    $3,
-                    $4
-                )
-                `,
-                [
-                    order.id,
-                    item.product_id,
-                    item.quantity,
-                    item.unit_price_cents
-                ]
-            )
-        }
-
-        /*
-         * HW19:
-         * order.placed публикується
-         * через business layer,
-         * а не напряму з controller.
-         */
-        await this.orders
-            .publishOrderPlaced({
-                id:
-                    order.id,
-
-                userId:
-                    user.id,
-
-                totalCents:
-                    order
-                        .total_amount_cents
-            })
-
-        return {
-            id:
-                order.id,
-
-            user_id:
-                user.id,
-
-            status:
-                'pending',
-
-            items:
-                resolvedItems,
-
-            total_cents:
-                order
-                    .total_amount_cents,
-
-            created_at:
-                order
-                    .created_at
-                    .toISOString()
+        } catch (error) {
+            if (error instanceof Error && error.message === 'OUT_OF_STOCK') {
+                throw new ConflictException(error.message)
+            }
+            if (error instanceof Error && error.message === 'IDEMPOTENCY_CONFLICT') {
+                throw new UnprocessableEntityException(error.message)
+            }
+            if (error instanceof Error &&
+                /^(INVALID_|PRODUCT_NOT_FOUND|IDEMPOTENCY_)/.test(error.message)) {
+                throw new BadRequestException(error.message)
+            }
+            throw error
         }
     }
 
     @Patch(':id/status')
+    @UseGuards(AdminGuard)
     async updateStatus(
         @Param('id')
         id: string,
@@ -332,7 +192,10 @@ export class OrdersController {
             string | undefined,
 
         @Res()
-        response: Response
+        response: Response,
+
+        @Req()
+        req: AuthenticatedRequest
     ) {
         const order =
             await this.orders
@@ -349,6 +212,10 @@ export class OrdersController {
                 })
 
             return
+        }
+
+        if (order.user_id !== req.principal!.id && req.principal!.role !== 'ADMIN') {
+            throw new ForbiddenException('Order belongs to another user')
         }
 
         response.writeHead(
@@ -442,7 +309,8 @@ export class OrdersController {
     @Get(':id')
     async getOrder(
         @Param('id')
-        id: string
+        id: string,
+        @Req() req: AuthenticatedRequest
     ) {
         const orderResult =
             await this.database
@@ -472,6 +340,10 @@ export class OrdersController {
             throw new NotFoundException(
                 `Order ${id} was not found`
             )
+        }
+
+        if (order.user_id !== req.principal!.id && req.principal!.role !== 'ADMIN') {
+            throw new ForbiddenException('Order belongs to another user')
         }
 
         const itemsResult =

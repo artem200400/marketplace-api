@@ -24,6 +24,8 @@ import {
     OrderEventsService
 } from './order-events.service.js'
 
+import { AuthService } from './auth/auth.service.js'
+
 import {
     OrdersService
 } from './orders.service.js'
@@ -52,7 +54,9 @@ export class OrdersGateway
             OrdersService,
 
         private readonly orderEvents:
-            OrderEventsService
+            OrderEventsService,
+
+        private readonly auth: AuthService
     ) { }
 
     onModuleInit() {
@@ -94,33 +98,14 @@ export class OrdersGateway
                 ''
             )
 
-        /*
-         * Для цього навчального Marketplace API
-         * userId приходить через Socket.IO auth.
-         *
-         * Клієнт:
-         * io(url, {
-         *   auth: { userId: '1' }
-         * })
-         */
-
-        const userId =
-            String(
-                socket
-                    .handshake
-                    .auth
-                    ?.userId ??
-                ''
-            )
-
-        if (!userId) {
-            return {
-                ok:
-                    false,
-
-                error:
-                    'UNAUTHORIZED'
-            }
+        let userId: string
+        try {
+            const token = socket.handshake.auth?.token
+            if (typeof token !== 'string') return {ok:false,error:'UNAUTHORIZED'}
+            const principal = await this.auth.authenticate('Bearer ' + token)
+            userId = principal.id
+        } catch {
+            return {ok:false,error:'UNAUTHORIZED'}
         }
 
         if (!orderId) {
