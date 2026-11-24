@@ -22,6 +22,7 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm run build
+      - run: npx redocly lint openapi/coursework.yaml
       - run: docker compose -f docker-compose.yml -f compose.coursework.yml up -d --wait api
       - run: node scripts/coursework-smoke.mjs
       - run: npm run test:e2e
