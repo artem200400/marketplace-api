@@ -500,7 +500,7 @@ its own order and event records, runs against a fresh database after migrations
 without needing a separate seed command, prints machine-readable counters,
 and exits nonzero if the invariant fails.
 
-Expected checks (verify actual numbers locally):
+Actual results from the GitHub Actions Docker/PostgreSQL run on HW22:
 
 ```text
 demo:outbox       requests=2 orders=1 outbox=1 published=1 effect=1 processed=1
