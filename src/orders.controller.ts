@@ -1,3 +1,6 @@
+import { Req, UseGuards, ForbiddenException } from '@nestjs/common'
+import { AccessGuard, AdminGuard } from './auth/auth.service.js'
+import type { AuthenticatedRequest } from './auth/auth.service.js'
 import { inTransaction, placeOrder } from './outbox/order-service.js'
 import {
     BadRequestException,
@@ -62,6 +65,7 @@ type OrderItemRow = {
 }
 
 @Controller('orders')
+@UseGuards(AccessGuard)
 export class OrdersController {
     constructor(
         private readonly database:
@@ -82,7 +86,10 @@ export class OrdersController {
             string | undefined,
 
         @Body()
-        body: CreateOrderBody
+        body: CreateOrderBody,
+
+        @Req()
+        req: AuthenticatedRequest
     ) {
         if (!idempotencyKey) {
             throw new BadRequestException(
@@ -119,26 +126,7 @@ export class OrdersController {
             }
         }
 
-        const userResult =
-            await this.database.query<{
-                id: string
-            }>(
-                `
-                SELECT id::text
-                FROM users
-                ORDER BY id
-                LIMIT 1
-                `
-            )
-
-        const user =
-            userResult.rows[0]
-
-        if (!user) {
-            throw new BadRequestException(
-                'No marketplace user exists'
-            )
-        }
+        const user = { id: req.principal!.id }
 
         try {
             const order = await this.database.withClient(client =>
@@ -163,6 +151,7 @@ export class OrdersController {
     }
 
     @Patch(':id/status')
+    @UseGuards(AdminGuard)
     async updateStatus(
         @Param('id')
         id: string,
@@ -197,7 +186,10 @@ export class OrdersController {
             string | undefined,
 
         @Res()
-        response: Response
+        response: Response,
+
+        @Req()
+        req: AuthenticatedRequest
     ) {
         const order =
             await this.orders
@@ -214,6 +206,10 @@ export class OrdersController {
                 })
 
             return
+        }
+
+        if (order.user_id !== req.principal!.id && req.principal!.role !== 'ADMIN') {
+            throw new ForbiddenException('Order belongs to another user')
         }
 
         response.writeHead(
@@ -307,7 +303,8 @@ export class OrdersController {
     @Get(':id')
     async getOrder(
         @Param('id')
-        id: string
+        id: string,
+        @Req() req: AuthenticatedRequest
     ) {
         const orderResult =
             await this.database
@@ -337,6 +334,10 @@ export class OrdersController {
             throw new NotFoundException(
                 `Order ${id} was not found`
             )
+        }
+
+        if (order.user_id !== req.principal!.id && req.principal!.role !== 'ADMIN') {
+            throw new ForbiddenException('Order belongs to another user')
         }
 
         const itemsResult =

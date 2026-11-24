@@ -13,16 +13,23 @@ async function api(path, init) {
 try {
   const ready = await api('/readyz')
   assert.equal(ready.status, 'ready')
+  const email = 'smoke-' + randomUUID() + '@example.invalid'
+  const password = 'StrongExamplePassword-' + randomUUID()
+  await api('/auth/register', {method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email,password})})
+  const tokens = await api('/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email,password})})
+  const auth = {'Authorization':'Bearer '+tokens.access_token}
   const product = (await db.query('SELECT id::text FROM products ORDER BY id LIMIT 1')).rows[0]
   assert.ok(product, 'Run seed first')
   const body = JSON.stringify({items:[{ product_id: product.id, quantity: 1 }]})
-  const init = {method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key},body}
+  const init = {method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key,...auth},body}
   const a = await api('/orders', init)
   const b = await api('/orders', init)
   assert.equal(a.id, b.id, 'same idempotency intent must not duplicate order')
   let order
   for (let attempt=0; attempt<80; attempt++) {
-    order = await api('/orders/' + a.id)
+    order = await api('/orders/' + a.id, {headers:auth})
     if (order.status === 'completed') break
     await new Promise(resolve=>setTimeout(resolve,250))
   }

@@ -1,3 +1,5 @@
+import { AuthController } from './auth/auth.controller.js'
+import { AuthService, AccessGuard, AdminGuard } from './auth/auth.service.js'
 import { RabbitOutboxRelay } from './outbox/rabbit-relay.service.js'
 
 import {
@@ -77,6 +79,7 @@ import {
     controllers: [
         HealthController,
         OrdersController,
+        AuthController,
         FilesController,
         ObserveController
     ],
@@ -88,6 +91,9 @@ import {
         RabbitPublisher,
         RabbitConsumer,
         RabbitOutboxRelay,
+        AuthService,
+        AccessGuard,
+        AdminGuard,
         FilesService,
         ObserveService,
         ObserveRepository

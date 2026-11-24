@@ -179,6 +179,13 @@ describe(
 
                 // The E2E suite defines its own isolated schema.
                 await pool.query(`
+                  ALTER TABLE users ADD COLUMN password_hash text;
+                  ALTER TABLE users ADD COLUMN role varchar(20) NOT NULL DEFAULT 'USER';
+                  CREATE TABLE auth_sessions (
+                    id uuid PRIMARY KEY, family_id uuid NOT NULL, user_id bigint NOT NULL REFERENCES users(id),
+                    refresh_hash char(64) NOT NULL UNIQUE, expires_at timestamptz NOT NULL,
+                    revoked_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+                  );
                   CREATE TABLE order_idempotency (
                     user_id bigint NOT NULL REFERENCES users(id),
                     idempotency_key varchar(200) NOT NULL,
@@ -270,6 +277,7 @@ describe(
                     'utf8'
                 )
 
+                process.env.AUTH_JWT_SECRET = 'coursework-e2e-only-' + 'a'.repeat(48)
                 process.env.PORT =
                     '3001'
 
@@ -346,6 +354,7 @@ describe(
                     )
                 }
 
+                delete process.env.AUTH_JWT_SECRET
                 delete process.env.PORT
                 delete process.env.DB_HOST
                 delete process.env.DB_PORT
@@ -358,6 +367,16 @@ describe(
             60000
         )
 
+        let bearer: string
+        it('registers and logs in',async()=>{
+            const email='authenticated-e2e@example.invalid'
+            const password='ExamplePasswordForE2ETests123!'
+            await request(app.getHttpServer()).post('/auth/register').send({email,password}).expect(201)
+            const result=await request(app.getHttpServer()).post('/auth/login').send({email,password}).expect(200)
+            bearer='Bearer '+result.body.access_token
+            expect(bearer).toContain('Bearer ')
+        })
+
         it(
             'creates an order and reads it back',
             async () => {
@@ -368,6 +387,7 @@ describe(
                         .post(
                             '/orders'
                         )
+                        .set('Authorization',bearer)
                         .set(
                             'Idempotency-Key',
                             'e2e-order-1'
@@ -446,6 +466,7 @@ describe(
                         .get(
                             `/orders/${orderId}`
                         )
+                        .set('Authorization',bearer)
                         .expect(
                             200
                         )
@@ -501,6 +522,10 @@ describe(
             }
         )
 
+        it('rejects anonymous order access',async()=>{
+            await request(app.getHttpServer()).get('/orders/1').expect(401)
+        })
+
         it(
             'returns 404 for a missing order',
             async () => {
@@ -510,6 +535,7 @@ describe(
                     .get(
                         '/orders/999999'
                     )
+                    .set('Authorization',bearer)
                     .expect(
                         404
                     )

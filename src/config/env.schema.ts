@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
 export const envSchema = z.object({
+    AUTH_JWT_SECRET: z.string().min(32, 'AUTH_JWT_SECRET is required (32+ characters)'),
+
     PORT: z.coerce
         .number()
         .int()

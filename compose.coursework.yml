@@ -12,6 +12,7 @@ services:
       - |
         set -euo pipefail
         printf '%s' "$$LOCAL_DB_PASSWORD" > /tmp/coursework-db-password
+        export AUTH_JWT_SECRET="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("hex"))')"
         npm ci
         npm run build
         npm run migrate
