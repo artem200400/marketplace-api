@@ -41,6 +41,43 @@ try {
      (SELECT count(*)::int FROM order_event_effects WHERE order_id=$1::text) AS effect
   `,[a.id])).rows[0]
   assert.deepEqual(counts,{orders:1,published:1,effect:1})
+  // Assert authentication, ownership, role, logout and refresh reuse.
+  const anonymous = await fetch(new URL('/orders/' + a.id,base))
+  assert.equal(anonymous.status,401)
+  const otherEmail = 'foreign-' + randomUUID() + '@example.invalid'
+  await api('/auth/register', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email:otherEmail,password})})
+  const other = await api('/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email:otherEmail,password})})
+  const forbidden = await fetch(new URL('/orders/' + a.id,base),{
+    headers:{Authorization:'Bearer '+other.access_token}
+  })
+  assert.equal(forbidden.status,403)
+  const deniedRole = await fetch(new URL('/orders/' + a.id + '/status',base), {
+    method:'PATCH',headers:{'Content-Type':'application/json',...auth},
+    body:JSON.stringify({status:'cancelled'})
+  })
+  assert.equal(deniedRole.status,403)
+  const refreshed = await api('/auth/refresh',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({refresh_token:tokens.refresh_token})})
+  const reused = await fetch(new URL('/auth/refresh',base),{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({refresh_token:tokens.refresh_token})})
+  assert.equal(reused.status,401)
+  const afterReuse = await fetch(new URL('/orders/'+a.id,base),{
+    headers:{Authorization:'Bearer '+refreshed.access_token}})
+  assert.equal(afterReuse.status,401)
+  await api('/auth/logout', {method:'POST', headers:{Authorization:'Bearer '+other.access_token}})
+  const afterLogout = await fetch(new URL('/orders/'+a.id,base),{
+    headers:{Authorization:'Bearer '+other.access_token}})
+  assert.equal(afterLogout.status,401)
+  console.log('logout-revoked=401')
+  console.log('anonymous=401')
+  console.log('foreign=403')
+  console.log('role-denied=403')
+  console.log('refresh-reuse=401')
+  console.log('family-revoked=401')
   console.log('requests=2')
   console.log('orders=1')
   console.log('published=1')

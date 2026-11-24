@@ -1477,7 +1477,11 @@ The Compose API service builds, migrates, seeds and starts the NestJS service au
 It listens at `http://127.0.0.1:23000` (Docker maps host 23000 to container 3000).
 `GET /healthz` is liveness and `GET /readyz` is readiness; `GET /metrics` provides metrics.
 `POST /orders` requires the `Idempotency-Key` header and an `items` array, while
-`GET /orders/:id` returns the persisted status. A separate RabbitMQ process and an
+`GET /orders/:id` returns the persisted status. Register through `POST /auth/register`,
+login with `POST /auth/login`, and pass the returned access token as
+`Authorization: Bearer <token>`. Refresh rotation happens at `POST /auth/refresh`;
+`POST /auth/logout` revokes the current session. The demo Compose generates
+`AUTH_JWT_SECRET` randomly on startup (never commit real signing keys). A separate RabbitMQ process and an
 outbox relay are used for asynchronous completion.
 
 On a successful acceptance run the script prints:
@@ -1511,23 +1515,22 @@ See other README sections for earlier homework-specific demos.
 | Architecture | Course + extension | This section, NestJS controllers, order service and SQL repository access |
 | Business flow / API | Course + extension | POST/GET live smoke, `demo:race`, OpenAPI contract; compare response schema before grading |
 | Persistence | Course | TypeORM migrations, Postgres, PgBouncer, backup/restore demo |
-| Security | Partial course | Request validation and secret wrapper; complete authentication/ownership authorization is **not** implemented for the coursework flow |
+| Security | Course + extension | Password hashing, HS256 allowlist, short-lived access tokens, persistent refresh sessions, refresh-family reuse revocation, 401/403 ownership and admin guard; see smoke |
 | Background work | Course + extension | RabbitMQ, transactional outbox, consumer deduplication, completed order status |
 | Docker / deployment | Course + extension | Local Compose service, earlier Docker/Kubernetes and GitHub deployment artifacts; public deployment not claimed |
 | Observability / CI | Course | `/healthz`, `/readyz`, `/metrics`, JSON logging, test suites, live smoke workflow |
 
-**Important gaps:** the coursework checkout currently uses the first seeded user, not a verified
-authenticated principal; do not treat it as a production-safe multi-user API. The existing
-status PATCH endpoint and SSE endpoint also need explicit authorization before public use.
-The API error envelope is not yet uniformly `application/problem+json`.
-For full points on security, implement authenticated identity, owner checks, 401 vs 403,
-refresh-token revocation, and consistent error mapping. The existing filesystem/object storage
-and Kubernetes demos are separate from the main business contour.
+**Remaining gaps:** the API error envelope is not yet uniformly `application/problem+json`,
+and the checkout path must still receive a complete production security review before
+public deployment. Authorization applies to order creation, reading, SSE and status mutation.
+Tokens are issued only from authenticated identities, not a user-supplied identity header.
+The existing filesystem/object storage and Kubernetes demos are separate from the main business contour.
 
 ### Environment variable sources
 
 | Variable | Local development source | Purpose |
 | --- | --- | --- |
+| `AUTH_JWT_SECRET` | Runtime-generated random secret in demo; secret manager in production | HMAC signing key (32+ bytes) |
 | `PORT` | `compose.coursework.yml` | API port |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` | Compose environment | Database endpoint |
 | `DB_PASSWORD_FILE` | Local temporary file generated at container startup | Database password file |
