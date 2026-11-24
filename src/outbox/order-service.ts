@@ -70,10 +70,16 @@ export async function placeOrder(
 
   const items: OrderResponse['items'] = []
   for (const item of input.items) {
+    // Atomic inventory reservation is part of the same transaction as the order and event.
+    // No successful checkout can take stock below zero.
     const product = (await client.query<{ id: string; price_cents: number }>(
-      'SELECT id::text, price_cents FROM products WHERE id=$1', [item.product_id]
+      `UPDATE products SET stock=stock-$2 WHERE id=$1 AND stock >= $2
+       RETURNING id::text, price_cents`, [item.product_id, item.quantity]
     )).rows[0]
-    if (!product) throw new Error('PRODUCT_NOT_FOUND')
+    if (!product) {
+      const exists = (await client.query('SELECT 1 FROM products WHERE id=$1',[item.product_id])).rowCount
+      throw new Error(exists ? 'OUT_OF_STOCK' : 'PRODUCT_NOT_FOUND')
+    }
     items.push({ product_id: product.id, quantity: item.quantity,
       unit_price_cents: Number(product.price_cents) })
   }

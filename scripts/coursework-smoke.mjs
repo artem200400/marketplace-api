@@ -22,11 +22,14 @@ try {
   const auth = {'Authorization':'Bearer '+tokens.access_token}
   const product = (await db.query('SELECT id::text FROM products ORDER BY id LIMIT 1')).rows[0]
   assert.ok(product, 'Run seed first')
+  const stockBefore = Number((await db.query('SELECT stock FROM products WHERE id=$1',[product.id])).rows[0].stock)
   const body = JSON.stringify({items:[{ product_id: product.id, quantity: 1 }]})
   const init = {method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key,...auth},body}
   const a = await api('/orders', init)
   const b = await api('/orders', init)
   assert.equal(a.id, b.id, 'same idempotency intent must not duplicate order')
+  const stockAfter = Number((await db.query('SELECT stock FROM products WHERE id=$1',[product.id])).rows[0].stock)
+  assert.equal(stockAfter,stockBefore-1,'same-key retry must decrement stock exactly once')
   const changed = await fetch(new URL('/orders',base),{
     method:'POST', headers:{'Content-Type':'application/json','Idempotency-Key':key,...auth},
     body:JSON.stringify({items:[{product_id:product.id,quantity:2}]})
@@ -94,6 +97,7 @@ try {
   console.log('validation=400')
   console.log('requests=2')
   console.log('orders=1')
+  console.log('stock-decrement=1')
   console.log('published=1')
   console.log('effect=1')
   console.log('final-status=completed')
