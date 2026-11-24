@@ -181,6 +181,11 @@ describe(
                 await pool.query(`
                   ALTER TABLE users ADD COLUMN password_hash text;
                   ALTER TABLE users ADD COLUMN role varchar(20) NOT NULL DEFAULT 'USER';
+                  CREATE TABLE auth_rate_limits (
+                    key varchar(255) PRIMARY KEY,
+                    window_start timestamptz NOT NULL,
+                    attempts integer NOT NULL DEFAULT 0
+                  );
                   CREATE TABLE auth_sessions (
                     id uuid PRIMARY KEY, family_id uuid NOT NULL, user_id bigint NOT NULL REFERENCES users(id),
                     refresh_hash char(64) NOT NULL UNIQUE, expires_at timestamptz NOT NULL,
