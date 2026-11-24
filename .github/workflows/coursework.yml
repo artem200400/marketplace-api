@@ -24,6 +24,7 @@ jobs:
       - run: npm run build
       - run: docker compose -f docker-compose.yml -f compose.coursework.yml up -d --wait api
       - run: node scripts/coursework-smoke.mjs
+      - run: npm run test:e2e
       - if: failure()
         run: docker compose -f docker-compose.yml -f compose.coursework.yml logs --no-color --tail=160 api rabbitmq pgbouncer postgres
       - if: always()
