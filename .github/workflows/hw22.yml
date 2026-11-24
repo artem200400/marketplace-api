@@ -1,0 +1,32 @@
+name: HW22 Outbox Grading
+
+on:
+  push:
+    branches: [hw-22]
+  pull_request:
+    branches: [hw-16]
+
+jobs:
+  outbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://marketplace_user:marketplace_password@127.0.0.1:6432/marketplace
+      BROKER_URL: http://127.0.0.1:18765
+      SKIP_VAULT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - run: docker compose up -d --wait
+      - run: npm run migrate
+      - run: npm run demo:outbox
+      - run: npm run demo:crash-write
+      - run: npm run demo:crash-relay
+      - if: always()
+        run: docker compose down -v
