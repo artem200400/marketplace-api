@@ -1,0 +1,50 @@
+# Add the API to the existing local infra without altering older homework demos.
+# Local development credentials below match docker-compose.yml; never use in production.
+services:
+  api:
+    image: node:22-bookworm-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        printf '%s' "$$LOCAL_DB_PASSWORD" > /tmp/coursework-db-password
+        npm ci
+        npm run build
+        npm run migrate
+        npm run seed
+        node dist/main.js
+    environment:
+      PORT: "3000"
+      APP_WARMUP_MS: "0"
+      APP_DRAIN_MS: "0"
+      SKIP_VAULT: "1"
+      DB_HOST: pgbouncer
+      DB_PORT: "6432"
+      DB_NAME: marketplace
+      DB_USER: marketplace_user
+      DB_PASSWORD_FILE: /tmp/coursework-db-password
+      DB_URL: postgresql://marketplace_user:marketplace_password@pgbouncer:6432/marketplace
+      DATABASE_URL: postgresql://marketplace_user:marketplace_password@pgbouncer:6432/marketplace
+      LOCAL_DB_PASSWORD: marketplace_password
+      BROKER_URL: amqp://marketplace:marketplace_password@rabbitmq:5672
+    ports:
+      - "23000:3000"
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 3s
+      timeout: 3s
+      retries: 80
+      start_period: 10s

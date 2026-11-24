@@ -112,9 +112,7 @@ export function observabilityMiddleware(
                 'request_received',
                 {
                     authorization:
-                        request
-                            .headers
-                            .authorization,
+                        request.headers.authorization ? '[REDACTED]' : undefined,
                     body:
                         path.startsWith(
                             '/auth/'
