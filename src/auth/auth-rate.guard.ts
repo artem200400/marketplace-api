@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, TooManyRequestsException } from '@nestjs/common'
+import { CanActivate, ExecutionContext, Injectable, HttpException, HttpStatus } from '@nestjs/common'
 import { DatabaseService } from '../database/database.service.js'
 import type { Request } from 'express'
 
