@@ -99,6 +99,10 @@ async function main(): Promise<void> {
   try {
     if (mode !== 'crash-write') broker = await startBroker()
     if (mode === 'crash-write') {
+      const baselineOrders = await count('SELECT count(*)::int n FROM orders WHERE user_id=$1', [ids.userId])
+      const baselineOutbox = await count(`SELECT count(*)::int n FROM outbox o
+        JOIN orders ord ON o.aggregate_type='Order' AND o.aggregate_id=ord.id::text
+        WHERE ord.user_id=$1`, [ids.userId])
       let failed = 0
       const client = await pool.connect()
       try {
@@ -111,8 +115,10 @@ async function main(): Promise<void> {
       } finally { client.release() }
       const values = {
         'write-failed': failed,
-        orders: await count('SELECT count(*)::int n FROM order_idempotency WHERE user_id=$1 AND idempotency_key=$2', [ids.userId, key]),
-        outbox: await count("SELECT count(*)::int n FROM outbox WHERE aggregate_type='Order' AND aggregate_id IN (SELECT order_id::text FROM order_idempotency WHERE user_id=$1 AND idempotency_key=$2)", [ids.userId,key]),
+        orders: await count('SELECT count(*)::int n FROM orders WHERE user_id=$1', [ids.userId]) - baselineOrders,
+        outbox: await count(`SELECT count(*)::int n FROM outbox o
+          JOIN orders ord ON o.aggregate_type='Order' AND o.aggregate_id=ord.id::text
+          WHERE ord.user_id=$1`, [ids.userId]) - baselineOutbox,
         published: 0, deliveries: 0, effect: 0
       }
       output(values, { 'write-failed': 1, orders: 0, outbox: 0, published: 0, deliveries: 0, effect: 0 })
