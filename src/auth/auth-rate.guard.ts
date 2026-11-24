@@ -23,7 +23,7 @@ export class AuthRateGuard implements CanActivate {
                             THEN date_trunc('minute',now()) ELSE auth_rate_limits.window_start END
       RETURNING attempts
     `,[key])).rows[0]
-    if (row.attempts > max) throw new TooManyRequestsException('Too many authentication attempts')
+    if (row.attempts > max) throw new HttpException('Too many authentication attempts', HttpStatus.TOO_MANY_REQUESTS)
     return true
   }
 }
