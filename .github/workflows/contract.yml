@@ -44,6 +44,7 @@ jobs:
         run: npm run test:contract
 
       - name: Publish Pact
+        if: ${{ env.PACT_BROKER_URL != '' && env.PACT_BROKER_TOKEN != '' }}
         shell: bash
         run: |
           curl --fail-with-body \
@@ -54,9 +55,11 @@ jobs:
             --data-binary @pacts/MarketplaceFrontend-MarketplaceAPI.json
 
       - name: Verify provider
+        if: ${{ env.PACT_BROKER_URL != '' && env.PACT_BROKER_TOKEN != '' }}
         run: npm run verify:provider
 
       - name: Can I deploy
+        if: ${{ env.PACT_BROKER_URL != '' && env.PACT_BROKER_TOKEN != '' }}
         shell: bash
         run: |
           RESPONSE="$(
