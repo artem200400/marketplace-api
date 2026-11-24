@@ -3,6 +3,7 @@ info:
   title: Marketplace Coursework API
   version: 1.0.0
   description: NestJS authenticated order processing with transactional outbox
+security: []
 servers:
   - url: http://localhost:23000
 paths:
