@@ -1,3 +1,4 @@
+import { AuthRateGuard } from './auth/auth-rate.guard.js'
 import { APP_FILTER } from '@nestjs/core'
 import { ProblemFilter } from './http/problem.filter.js'
 import { AuthController } from './auth/auth.controller.js'
@@ -94,6 +95,7 @@ import {
         RabbitConsumer,
         RabbitOutboxRelay,
         { provide: APP_FILTER, useClass: ProblemFilter },
+        AuthRateGuard,
         AuthService,
         AccessGuard,
         AdminGuard,

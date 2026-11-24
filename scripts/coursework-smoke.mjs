@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
+import { io } from 'socket.io-client'
 const base = process.env.COURSEWORK_API_URL ?? 'http://127.0.0.1:23000'
 const db = new pg.Pool({ connectionString: process.env.DATABASE_URL })
 const key = 'coursework-smoke-' + randomUUID()
@@ -68,6 +69,36 @@ try {
     headers:{Authorization:'Bearer '+other.access_token}
   })
   assert.equal(forbidden.status,403)
+  // Verify an authenticated websocket room cannot be joined as another user.
+  async function tryJoin(token,orderId) {
+    const socket = io(base,{transports:['websocket'],reconnection:false,auth:{token}})
+    try {
+      await new Promise((resolve,reject)=>{
+        const timer=setTimeout(()=>reject(new Error('Socket connect timeout')),5000)
+        socket.once('connect',()=>{clearTimeout(timer);resolve()})
+        socket.once('connect_error',e=>{clearTimeout(timer);reject(e)})
+      })
+      return await new Promise((resolve,reject)=>{
+        const timer=setTimeout(()=>reject(new Error('Socket ACK timeout')),5000)
+        socket.emit('join',{orderId},answer=>{clearTimeout(timer);resolve(answer)})
+      })
+    } finally { socket.disconnect() }
+  }
+  const wsOwner = await tryJoin(tokens.access_token,a.id)
+  assert.equal(wsOwner.ok,true)
+  const wsForeign = await tryJoin(other.access_token,a.id)
+  assert.equal(wsForeign.error,'FORBIDDEN')
+  const wsAnonymous = await tryJoin('',a.id)
+  assert.equal(wsAnonymous.error,'UNAUTHORIZED')
+  console.log('ws-owner=1')
+  console.log('ws-cross-user=403')
+  console.log('ws-anonymous=401')
+  const fakeUpload = await fetch(new URL('/uploads/intent',base),{
+    method:'POST',headers:{'Content-Type':'application/json','x-user-id':'1'},
+    body:JSON.stringify({contentType:'image/png',size:100})
+  })
+  assert.equal(fakeUpload.status,401)
+  console.log('upload-spoof=401')
   const deniedRole = await fetch(new URL('/orders/' + a.id + '/status',base), {
     method:'PATCH',headers:{'Content-Type':'application/json',...auth},
     body:JSON.stringify({status:'cancelled'})
