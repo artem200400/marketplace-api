@@ -261,6 +261,31 @@ export async function checkout(
         ]
     )
 
+    // HW22: the original HW14 checkout also records its domain event in
+    // the very same transaction as stock, balance, order and order items.
+    await manager.query(
+        `
+        INSERT INTO outbox (
+            aggregate_type, aggregate_id, type, payload
+        )
+        VALUES ('Order', $1, 'OrderPlaced', $2::jsonb)
+        `,
+        [
+            String(order.id),
+            JSON.stringify({
+                version: 1,
+                orderId: String(order.id),
+                userId: input.userId,
+                totalCents: totalAmountCents,
+                items: [{
+                    productId: input.productId,
+                    quantity: input.quantity,
+                    unitPriceCents: Number(product.price_cents)
+                }]
+            })
+        ]
+    )
+
     return {
         orderId:
             String(order.id),
