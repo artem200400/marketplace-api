@@ -30,8 +30,8 @@ try {
   const counts = (await db.query(`
     SELECT
      (SELECT count(*)::int FROM orders WHERE id=$1) AS orders,
-     (SELECT count(*)::int FROM outbox WHERE aggregate_id=$1 AND published_at IS NOT NULL) AS published,
-     (SELECT count(*)::int FROM order_event_effects WHERE order_id=$1) AS effect
+     (SELECT count(*)::int FROM outbox WHERE aggregate_id=$1::text AND published_at IS NOT NULL) AS published,
+     (SELECT count(*)::int FROM order_event_effects WHERE order_id=$1::text) AS effect
   `,[a.id])).rows[0]
   assert.deepEqual(counts,{orders:1,published:1,effect:1})
   console.log('requests=2')
