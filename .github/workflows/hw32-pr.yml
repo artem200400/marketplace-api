@@ -133,6 +133,11 @@ jobs:
         run: |
           npm ci
           npm --prefix infra ci
+      - name: Create ephemeral JWT key for test deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e 'process.stdout.write("AUTH_JWT_SECRET=" + require("node:crypto").randomBytes(48).toString("hex") + "\\n")' >> "$GITHUB_ENV"
       - name: Prepare evidence files
         shell: bash
         run: |
@@ -192,6 +197,16 @@ jobs:
         run: |
           APP_IMAGE="$IMAGE_REF@$BUILT_DIGEST" REV="$HEAD_SHA" npm run up
           kubectl -n marketplace-hw28 get deploy marketplace-api -o json > evidence/deployment.json
+      - name: Collect pod failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          kubectl -n marketplace-hw28 get pods -o wide || true
+          kubectl -n marketplace-hw28 describe pods -l app=marketplace-api || true
+          for pod in $(kubectl -n marketplace-hw28 get pods -l app=marketplace-api -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+            kubectl -n marketplace-hw28 logs "$pod" -c api --tail=100 || true
+            kubectl -n marketplace-hw28 logs "$pod" -c api --previous --tail=100 || true
+          done
       - name: Rollout gate
         shell: bash
         run: |
